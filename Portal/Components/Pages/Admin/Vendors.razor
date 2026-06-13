@@ -1,0 +1,345 @@
+@page "/portal/admin/vendors"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject VendorService           VendorService
+@inject StateRegionService      StateRegionService
+@inject CountryService          CountryService
+@inject ChartOfAccountsService  CoaService
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Vendors — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Vendors</h1>
+    </div>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Vendors</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Excel (.xlsx) or delimited text. Required column: <strong>VendorCode</strong>.
+            Optional columns: <strong>Name, Description, Address1, Address2, Address3, City,
+            State, PostalCode, Country, DefaultPayablesAccount</strong>.
+            State and Country are matched by Code or Name. Existing vendors (matched by VendorCode) are updated.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="ImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated, updated: @_importResult.AccountsUpdated, skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Add / Edit Form ────────────────────────────────────────────────── -->
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
+    }
+
+    <div class="form-card" style="margin-bottom:24px;">
+        <h2 class="form-section-title">@(_editId == 0 ? "Add Vendor" : "Edit Vendor")</h2>
+
+        <div style="display:grid;grid-template-columns:160px 1fr;gap:12px;">
+            <div class="form-row">
+                <label>Vendor Code <span class="required">*</span></label>
+                <input type="text" @bind="_f.VendorCode" @bind:event="oninput" maxlength="50"
+                       placeholder="e.g. ACME01" style="text-transform:uppercase;" />
+            </div>
+            <div class="form-row">
+                <label>Name <span class="required">*</span></label>
+                <input type="text" @bind="_f.Name" @bind:event="oninput" maxlength="200" placeholder="Vendor name" />
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label>Description</label>
+            <input type="text" @bind="_f.Description" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
+        </div>
+
+        <div style="margin:8px 0 4px;font-weight:600;font-size:.85rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.05em;">
+            Address
+        </div>
+        <div class="form-row">
+            <label>Address 1</label>
+            <input type="text" @bind="_f.Address1" @bind:event="oninput" maxlength="200" placeholder="Street address" />
+        </div>
+        <div class="form-row">
+            <label>Address 2</label>
+            <input type="text" @bind="_f.Address2" @bind:event="oninput" maxlength="200" placeholder="Suite, unit, etc." />
+        </div>
+        <div class="form-row">
+            <label>Address 3</label>
+            <input type="text" @bind="_f.Address3" @bind:event="oninput" maxlength="200" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 200px 120px;gap:12px;">
+            <div class="form-row">
+                <label>City</label>
+                <input type="text" @bind="_f.City" @bind:event="oninput" maxlength="100" />
+            </div>
+            <div class="form-row">
+                <label>State / Region</label>
+                <select @bind="_f.StateRegionID">
+                    <option value="0">— None —</option>
+                    @foreach (var s in _states)
+                    { <option value="@s.StateRegionID">@s.Code — @s.Name</option> }
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Postal Code</label>
+                <input type="text" @bind="_f.PostalCode" @bind:event="oninput" maxlength="20" />
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-row">
+                <label>Country</label>
+                <select @bind="_f.CountryID">
+                    <option value="0">— None —</option>
+                    @foreach (var c in _countries)
+                    { <option value="@c.CountryID">@c.Code — @c.Name</option> }
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Default Payables Account</label>
+                <select @bind="_f.DefaultPayablesAccountID">
+                    <option value="0">— None —</option>
+                    @foreach (var a in _accounts)
+                    { <option value="@a.AccountID">@a.AccountName</option> }
+                </select>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="SaveAsync"
+                    disabled="@(string.IsNullOrWhiteSpace(_f.VendorCode) || string.IsNullOrWhiteSpace(_f.Name))">
+                @(_editId == 0 ? "Add Vendor" : "Save Changes")
+            </button>
+            @if (_editId != 0)
+            {
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            }
+        </div>
+    </div>
+
+    <!-- ── Vendor Table ────────────────────────────────────────────────────── -->
+    <div class="table-card">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
+            @_vendors.Count vendor(s)
+        </div>
+        @if (_vendors.Count == 0)
+        {
+            <p style="padding:16px;color:var(--color-text-muted);">No vendors defined yet. Add one above or import a file.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:110px;">Code</th>
+                        <th>Name</th>
+                        <th>City</th>
+                        <th style="width:70px;">State</th>
+                        <th style="width:70px;">Country</th>
+                        <th>Payables Account</th>
+                        <th style="width:120px;text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in _vendors)
+                    {
+                        <tr @key="v.VendorID">
+                            <td><code style="font-size:.85rem;">@v.VendorCode</code></td>
+                            <td>@v.Name</td>
+                            <td>@v.City</td>
+                            <td>@v.StateCode</td>
+                            <td>@v.CountryCode</td>
+                            <td style="font-size:.85rem;">@v.PayablesAccount</td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(v)">Edit</button>
+                                <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(v)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Vendor</h3>
+            <p>Permanently delete <strong>@_deleteTarget.Name (@_deleteTarget.VendorCode)</strong>?</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ── Data ──────────────────────────────────────────────────────────────────
+    private List<Portal.Models.Vendor>          _vendors  = [];
+    private List<Portal.Models.StateRegion>     _states   = [];
+    private List<Portal.Models.Country>         _countries= [];
+    private List<Portal.Models.ChartOfAccount>  _accounts = [];
+
+    // ── Import ────────────────────────────────────────────────────────────────
+    private IBrowserFile?               _importFile;
+    private bool                        _showDelimiter;
+    private string                      _delimiter    = ",";
+    private bool                        _importing;
+    private Portal.Models.ImportResult? _importResult;
+
+    // ── CRUD form (mutable copy) ──────────────────────────────────────────────
+    private sealed class FormModel
+    {
+        public int    VendorID                 { get; set; }
+        public string VendorCode               { get; set; } = string.Empty;
+        public string Name                     { get; set; } = string.Empty;
+        public string Description              { get; set; } = string.Empty;
+        public string Address1                 { get; set; } = string.Empty;
+        public string Address2                 { get; set; } = string.Empty;
+        public string Address3                 { get; set; } = string.Empty;
+        public string City                     { get; set; } = string.Empty;
+        public int    StateRegionID            { get; set; }
+        public string PostalCode               { get; set; } = string.Empty;
+        public int    CountryID                { get; set; }
+        public int    DefaultPayablesAccountID { get; set; }
+    }
+
+    private FormModel _f = new();
+    private int       _editId;
+    private string    _message = string.Empty;
+    private bool      _isError;
+    private Portal.Models.Vendor? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _states    = await StateRegionService.GetAllAsync();
+        _countries = await CountryService.GetAllAsync();
+        _accounts  = await CoaService.GetAllAsync();
+        _vendors   = await VendorService.GetAllAsync();
+    }
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        _showDelimiter = Path.GetExtension(e.File.Name).ToLowerInvariant() is not (".xlsx" or ".xls");
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await VendorService.ImportAsync(stream, _importFile.Name, delim);
+            _vendors = await VendorService.GetAllAsync();
+        }
+        catch (Exception ex) { _importResult = new Portal.Models.ImportResult { Errors = [$"Import failed: {ex.Message}"] }; }
+        finally { _importing = false; }
+    }
+
+    // ── CRUD ─────────────────────────────────────────────────────────────────
+
+    private void BeginEdit(Portal.Models.Vendor v)
+    {
+        _editId  = v.VendorID;
+        _message = string.Empty;
+        _f = new FormModel
+        {
+            VendorID                 = v.VendorID,
+            VendorCode               = v.VendorCode,
+            Name                     = v.Name,
+            Description              = v.Description,
+            Address1                 = v.Address1,
+            Address2                 = v.Address2,
+            Address3                 = v.Address3,
+            City                     = v.City,
+            StateRegionID            = v.StateRegionID ?? 0,
+            PostalCode               = v.PostalCode,
+            CountryID                = v.CountryID ?? 0,
+            DefaultPayablesAccountID = v.DefaultPayablesAccountID ?? 0,
+        };
+    }
+
+    private void CancelEdit() { _editId = 0; _f = new(); }
+
+    private async Task SaveAsync()
+    {
+        var item = new Portal.Models.Vendor
+        {
+            VendorID                 = _editId,
+            VendorCode               = _f.VendorCode,
+            Name                     = _f.Name,
+            Description              = _f.Description,
+            Address1                 = _f.Address1,
+            Address2                 = _f.Address2,
+            Address3                 = _f.Address3,
+            City                     = _f.City,
+            StateRegionID            = _f.StateRegionID == 0            ? null : _f.StateRegionID,
+            PostalCode               = _f.PostalCode,
+            CountryID                = _f.CountryID == 0                ? null : _f.CountryID,
+            DefaultPayablesAccountID = _f.DefaultPayablesAccountID == 0 ? null : _f.DefaultPayablesAccountID,
+        };
+        try
+        {
+            if (_editId == 0) { await VendorService.CreateAsync(item); _message = $"Vendor \"{_f.Name}\" added."; }
+            else              { await VendorService.UpdateAsync(item); _message = $"Vendor \"{_f.Name}\" updated."; }
+            _isError = false;
+            CancelEdit();
+            _vendors = await VendorService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message.Contains("UNIQUE") ? $"Vendor code \"{_f.VendorCode.ToUpperInvariant()}\" already exists." : ex.Message;
+            _isError = true;
+        }
+    }
+
+    private void ConfirmDelete(Portal.Models.Vendor v) => _deleteTarget = v;
+    private void CancelDelete()                          => _deleteTarget = null;
+
+    private async Task DeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        await VendorService.DeleteAsync(_deleteTarget.VendorID);
+        _message = $"Vendor \"{_deleteTarget.Name}\" deleted.";
+        _isError = false; _deleteTarget = null;
+        _vendors = await VendorService.GetAllAsync();
+    }
+}

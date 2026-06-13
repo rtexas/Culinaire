@@ -1,0 +1,126 @@
+@page "/portal/payables"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject PayableService         PayableService
+@inject NavigationManager      Nav
+@inject LocationSessionService LocationSession
+
+<PageTitle>Payables — Culinaire Portal</PageTitle>
+
+@if (!LocationSession.HasLocation)
+{
+    <div class="no-location-guard">
+        <p>No location selected.</p>
+        <a class="btn-secondary" href="/portal">Return to Dashboard</a>
+    </div>
+    return;
+}
+
+<div class="admin-page">
+    <div class="module-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h1 class="page-heading">Payables</h1>
+        <button class="btn-primary" @onclick='() => Nav.NavigateTo("/portal/payables/new")'>
+            + New Invoice
+        </button>
+    </div>
+    <div class="location-banner" style="margin-bottom:12px;">
+        📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+    </div>
+    <p class="page-sub">Manage vendor invoices and payables transactions.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
+    }
+
+    <div class="table-card">
+        @if (_payables.Count == 0)
+        {
+            <p style="padding:16px;color:var(--color-text-muted);">No payables recorded yet. Click <strong>+ New Invoice</strong> to create one.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:130px;">Invoice #</th>
+                        <th>Vendor</th>
+                        <th style="width:105px;">Inv Date</th>
+                        <th style="width:105px;">Due Date</th>
+                        <th style="width:95px;text-align:right;">Subtotal</th>
+                        <th style="width:85px;text-align:right;">Shipping</th>
+                        <th style="width:80px;text-align:right;">Tax</th>
+                        <th style="width:95px;text-align:right;">Total</th>
+                        <th style="width:80px;text-align:center;">Status</th>
+                        <th style="width:140px;text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _payables)
+                    {
+                        <tr @key="p.PayableID">
+                            <td><code style="font-size:.85rem;">@p.InvoiceNumber</code></td>
+                            <td>@p.VendorName</td>
+                            <td>@p.InvoiceDate.ToString("MM/dd/yyyy")</td>
+                            <td>@(p.DueDate.HasValue ? p.DueDate.Value.ToString("MM/dd/yyyy") : "—")</td>
+                            <td style="text-align:right;">@p.Subtotal.ToString("C")</td>
+                            <td style="text-align:right;">@(p.ShippingCharge > 0 ? p.ShippingCharge.ToString("C") : "—")</td>
+                            <td style="text-align:right;">@(p.TaxAmount > 0 ? p.TaxAmount.ToString("C") : "—")</td>
+                            <td style="text-align:right;font-weight:600;">@p.Total.ToString("C")</td>
+                            <td style="text-align:center;">
+                                <span class="status-badge status-@p.Status.ToLowerInvariant()">@p.Status</span>
+                            </td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn-sm btn-secondary"
+                                        @onclick='() => Nav.NavigateTo($"/portal/payables/{p.PayableID}")'>
+                                    Edit
+                                </button>
+                                <button class="btn-sm btn-danger" @onclick="() => ConfirmDelete(p)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Payable</h3>
+            <p>
+                Permanently delete invoice <strong>@_deleteTarget.InvoiceNumber</strong>
+                from <strong>@_deleteTarget.VendorName</strong>?
+                All line items will also be removed.
+            </p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Portal.Models.PayableHeader> _payables = [];
+    private string _message = string.Empty;
+    private bool   _isError;
+    private Portal.Models.PayableHeader? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+        => _payables = await PayableService.GetAllAsync();
+
+    private void ConfirmDelete(Portal.Models.PayableHeader p) => _deleteTarget = p;
+    private void CancelDelete()                                 => _deleteTarget = null;
+
+    private async Task DeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        await PayableService.DeleteAsync(_deleteTarget.PayableID);
+        _message     = $"Invoice \"{_deleteTarget.InvoiceNumber}\" deleted.";
+        _isError     = false;
+        _deleteTarget = null;
+        _payables    = await PayableService.GetAllAsync();
+    }
+}

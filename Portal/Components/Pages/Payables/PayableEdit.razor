@@ -1,0 +1,416 @@
+@page "/portal/payables/new"
+@page "/portal/payables/{PayableId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject PayableService         PayableService
+@inject VendorService          VendorService
+@inject ItemService            ItemService
+@inject ShippingMethodService  ShipService
+@inject NavigationManager      Nav
+@inject LocationSessionService LocationSession
+
+<PageTitle>@(_payableId == 0 ? "New Invoice" : $"Invoice {_invoiceNumber}") — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header" style="display:flex;align-items:center;gap:12px;">
+        <button class="btn-secondary btn-sm" @onclick='() => Nav.NavigateTo("/portal/payables")'>← Back</button>
+        <h1 class="page-heading" style="margin:0;">@(_payableId == 0 ? "New Invoice" : $"Edit Invoice")</h1>
+    </div>
+    @if (LocationSession.HasLocation)
+    {
+        <div class="location-banner" style="margin-bottom:12px;">
+            📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin:16px 0;">@_message</div>
+    }
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-top:16px;margin-bottom:20px;">
+        <h2 class="form-section-title">Invoice Information</h2>
+
+        <div class="form-grid-2">
+            <div class="form-row">
+                <label>Vendor <span class="required">*</span></label>
+                <select value="@_vendorId" @onchange="OnVendorChanged">
+                    <option value="0">— Select Vendor —</option>
+                    @foreach (var v in _vendors)
+                    {
+                        <option value="@v.VendorID">@v.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Status</label>
+                <select @bind="_status">
+                    <option value="Open">Open</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Void">Void</option>
+                </select>
+            </div>
+        </div>
+
+        @if (_selectedVendor is not null)
+        {
+            <div class="vendor-address-block">
+                <div class="vendor-address-name">@_selectedVendor.Name</div>
+                @if (!string.IsNullOrWhiteSpace(_selectedVendor.Address1))
+                {
+                    <div>@_selectedVendor.Address1</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_selectedVendor.Address2))
+                {
+                    <div>@_selectedVendor.Address2</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_selectedVendor.Address3))
+                {
+                    <div>@_selectedVendor.Address3</div>
+                }
+                @{
+                    var cityLine = string.Join(", ", new[]
+                    {
+                        _selectedVendor.City,
+                        _selectedVendor.StateCode,
+                        _selectedVendor.PostalCode,
+                    }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                }
+                @if (!string.IsNullOrWhiteSpace(cityLine))
+                {
+                    <div>@cityLine</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_selectedVendor.CountryName) &&
+                     !string.Equals(_selectedVendor.CountryCode, "US", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div>@_selectedVendor.CountryName</div>
+                }
+            </div>
+        }
+
+        <div class="form-grid-3">
+            <div class="form-row">
+                <label>Invoice Number <span class="required">*</span></label>
+                <input type="text" @bind="_invoiceNumber" @bind:event="oninput"
+                       maxlength="100" placeholder="e.g. INV-2024-00123" />
+            </div>
+            <div class="form-row">
+                <label>Invoice Date <span class="required">*</span></label>
+                <input type="date" @bind="_invoiceDate" />
+            </div>
+            <div class="form-row">
+                <label>Due Date</label>
+                <input type="date" @bind="_dueDate" />
+            </div>
+        </div>
+
+        <div class="form-row" style="max-width:600px;">
+            <label>Notes</label>
+            <input type="text" @bind="_notes" @bind:event="oninput" maxlength="500" placeholder="Optional notes" />
+        </div>
+    </div>
+
+    <!-- ── Line Items ─────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:20px;">
+        <h2 class="form-section-title">Line Items</h2>
+
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="min-width:820px;">
+                <thead>
+                    <tr>
+                        <th style="width:32px;text-align:center;">#</th>
+                        <th style="width:210px;">Item</th>
+                        <th>Description</th>
+                        <th style="width:90px;text-align:right;">Qty</th>
+                        <th style="width:110px;text-align:right;">Unit Price</th>
+                        <th style="width:115px;text-align:right;">Ext. Price</th>
+                        <th style="width:40px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < _lines.Count; i++)
+                    {
+                        var line = _lines[i];
+                        var idx  = i;
+                        <tr @key="line.Key">
+                            <td style="text-align:center;color:var(--color-text-muted);font-size:.85rem;">@(idx+1)</td>
+                            <td>
+                                <select value="@(line.ItemID?.ToString() ?? string.Empty)"
+                                        @onchange="e => OnItemChanged(line, e.Value?.ToString() ?? string.Empty)">
+                                    <option value="">— Manual Entry —</option>
+                                    @foreach (var item in _items)
+                                    {
+                                        <option value="@item.ItemID">@item.ItemCode — @item.ItemName</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <input type="text" value="@line.Description"
+                                       @oninput="e => line.Description = e.Value?.ToString() ?? string.Empty"
+                                       maxlength="500" placeholder="Description" style="width:100%;" />
+                            </td>
+                            <td>
+                                <input type="number" value="@line.Quantity" min="0" step="0.0001"
+                                       @oninput="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) line.Quantity = v; }"
+                                       style="text-align:right;width:100%;" />
+                            </td>
+                            <td>
+                                <input type="number" value="@line.UnitPrice" min="0" step="0.01"
+                                       @oninput="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) line.UnitPrice = v; }"
+                                       style="text-align:right;width:100%;" />
+                            </td>
+                            <td style="text-align:right;padding-right:12px;font-weight:500;">
+                                @line.ExtendedPrice.ToString("C")
+                            </td>
+                            <td style="text-align:center;">
+                                <button class="btn-sm btn-danger" title="Remove line"
+                                        @onclick="() => RemoveLine(line)">✕</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top:10px;">
+            <button class="btn-secondary btn-sm" @onclick="AddLine">+ Add Line</button>
+        </div>
+
+        <!-- ── Totals ──────────────────────────────────────────────────────── -->
+        <div style="display:flex;justify-content:flex-end;margin-top:20px;">
+            <table style="min-width:380px;border-collapse:collapse;">
+                <tr>
+                    <td style="padding:4px 12px 4px 0;text-align:right;color:var(--color-text-muted);">Subtotal</td>
+                    <td style="padding:4px 0;text-align:right;min-width:110px;font-weight:500;">@Subtotal.ToString("C")</td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 12px 4px 0;text-align:right;">
+                        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+                            <span style="color:var(--color-text-muted);">Shipping</span>
+                            <select @bind="_shippingMethodId" style="font-size:12px;padding:2px 4px;max-width:160px;">
+                                <option value="">— None —</option>
+                                @foreach (var m in _shipMethods)
+                                {
+                                    <option value="@m.ShippingMethodID">@m.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </td>
+                    <td style="padding:4px 0;text-align:right;">
+                        <input type="number" @bind="_shippingCharge" min="0" step="0.01"
+                               style="text-align:right;width:110px;" />
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 12px 4px 0;text-align:right;color:var(--color-text-muted);">Tax Amount</td>
+                    <td style="padding:4px 0;text-align:right;">
+                        <input type="number" @bind="_taxAmount" min="0" step="0.01"
+                               style="text-align:right;width:110px;" />
+                    </td>
+                </tr>
+                <tr style="border-top:2px solid var(--color-border);">
+                    <td style="padding:8px 12px 4px 0;text-align:right;font-weight:700;font-size:1.05rem;">Total</td>
+                    <td style="padding:8px 0 4px;text-align:right;font-weight:700;font-size:1.1rem;color:var(--color-primary);">
+                        @Total.ToString("C")
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Actions ────────────────────────────────────────────────────────── -->
+    <div class="form-actions">
+        <button class="btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @(_saving ? "Saving…" : (_payableId == 0 ? "Save Invoice" : "Save Changes"))
+        </button>
+        <button class="btn-secondary" @onclick='() => Nav.NavigateTo("/portal/payables")'>Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int PayableId { get; set; }
+
+    private int      _payableId;
+    private int      _vendorId;
+    private string   _invoiceNumber  = string.Empty;
+    private DateTime _invoiceDate    = DateTime.Today;
+    private DateTime? _dueDate;
+    private string?  _shippingMethodId;
+    private decimal  _shippingCharge;
+    private decimal  _taxAmount;
+    private string   _notes          = string.Empty;
+    private string   _status         = "Open";
+    private bool     _saving;
+    private string   _message        = string.Empty;
+    private bool     _isError;
+
+    private List<Portal.Models.Vendor>         _vendors        = [];
+    private List<Portal.Models.Item>           _items          = [];
+    private List<Portal.Models.ShippingMethod> _shipMethods    = [];
+    private List<LineEdit>                     _lines          = [];
+    private Portal.Models.Vendor?              _selectedVendor;
+
+    private decimal Subtotal => _lines.Sum(l => l.ExtendedPrice);
+    private decimal Total    => Subtotal + _shippingCharge + _taxAmount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var vendorTask = VendorService.GetAllAsync();
+        var itemTask   = ItemService.GetAllAsync();
+        var shipTask   = ShipService.GetAllAsync();
+        await Task.WhenAll(vendorTask, itemTask, shipTask);
+        _vendors     = vendorTask.Result;
+        _items       = itemTask.Result;
+        _shipMethods = shipTask.Result;
+
+        _payableId = PayableId;
+        if (_payableId > 0)
+        {
+            var header = await PayableService.GetByIdAsync(_payableId);
+            if (header is not null)
+            {
+                _vendorId         = header.VendorID;
+                _invoiceNumber    = header.InvoiceNumber;
+                _invoiceDate      = header.InvoiceDate;
+                _dueDate          = header.DueDate;
+                _shippingMethodId = header.ShippingMethodID?.ToString();
+                _shippingCharge   = header.ShippingCharge;
+                _taxAmount        = header.TaxAmount;
+                _notes            = header.Notes;
+                _status           = header.Status;
+            }
+            var dbLines = await PayableService.GetLineItemsAsync(_payableId);
+            _lines = dbLines.Select(l => new LineEdit
+            {
+                ItemID      = l.ItemID,
+                Description = l.Description,
+                Quantity    = l.Quantity,
+                UnitPrice   = l.UnitPrice,
+            }).ToList();
+        }
+
+        if (_lines.Count == 0) _lines.Add(new LineEdit());
+
+        // Populate address block when editing an existing invoice
+        if (_vendorId > 0)
+            _selectedVendor = _vendors.FirstOrDefault(v => v.VendorID == _vendorId);
+    }
+
+    private void OnVendorChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id) && id > 0)
+        {
+            _vendorId       = id;
+            _selectedVendor = _vendors.FirstOrDefault(v => v.VendorID == id);
+        }
+        else
+        {
+            _vendorId       = 0;
+            _selectedVendor = null;
+        }
+    }
+
+    private void AddLine() => _lines.Add(new LineEdit());
+
+    private void RemoveLine(LineEdit line)
+    {
+        _lines.Remove(line);
+        if (_lines.Count == 0) _lines.Add(new LineEdit());
+    }
+
+    private void OnItemChanged(LineEdit line, string value)
+    {
+        if (int.TryParse(value, out var id) && id > 0)
+        {
+            line.ItemID = id;
+            var item = _items.FirstOrDefault(i => i.ItemID == id);
+            if (item is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line.Description))
+                    line.Description = item.ItemName;
+                if (line.UnitPrice == 0 && item.TypicalPrice.HasValue)
+                    line.UnitPrice = item.TypicalPrice.Value;
+            }
+        }
+        else
+        {
+            line.ItemID = null;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _message = string.Empty;
+        if (_vendorId == 0)          { _message = "Please select a vendor.";          _isError = true; return; }
+        if (string.IsNullOrWhiteSpace(_invoiceNumber)) { _message = "Invoice number is required."; _isError = true; return; }
+
+        var validLines = _lines.Where(l => !string.IsNullOrWhiteSpace(l.Description) && l.Quantity > 0).ToList();
+        if (validLines.Count == 0)   { _message = "At least one line item with a description and quantity > 0 is required."; _isError = true; return; }
+
+        _saving = true;
+        try
+        {
+            int? shipId = int.TryParse(_shippingMethodId, out var sid) && sid > 0 ? sid : null;
+
+            var header = new Portal.Models.PayableHeader
+            {
+                PayableID        = _payableId,
+                VendorID         = _vendorId,
+                InvoiceNumber    = _invoiceNumber,
+                InvoiceDate      = _invoiceDate,
+                DueDate          = _dueDate,
+                ShippingMethodID = shipId,
+                ShippingCharge   = _shippingCharge,
+                TaxAmount        = _taxAmount,
+                Notes            = _notes,
+                Status           = _status,
+            };
+
+            var lines = validLines.Select(l => new Portal.Models.PayableLineItem
+            {
+                ItemID      = l.ItemID,
+                Description = l.Description,
+                Quantity    = l.Quantity,
+                UnitPrice   = l.UnitPrice,
+                ExtendedPrice = l.ExtendedPrice,
+            }).ToList();
+
+            var id = await PayableService.SavePayableAsync(header, lines);
+            _payableId = id;
+            _message   = "Invoice saved successfully.";
+            _isError   = false;
+
+            // refresh line list to match DB order
+            var dbLines = await PayableService.GetLineItemsAsync(_payableId);
+            _lines = dbLines.Select(l => new LineEdit
+            {
+                ItemID      = l.ItemID,
+                Description = l.Description,
+                Quantity    = l.Quantity,
+                UnitPrice   = l.UnitPrice,
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message.Contains("UNIQUE")
+                ? $"Invoice number \"{_invoiceNumber}\" already exists for this vendor."
+                : ex.Message;
+            _isError = true;
+        }
+        finally { _saving = false; }
+    }
+
+    // ── In-memory line edit model ─────────────────────────────────────────────
+
+    private sealed class LineEdit
+    {
+        // Unique key so Blazor can track identity even when reordering
+        public Guid    Key         { get; } = Guid.NewGuid();
+        public int?    ItemID      { get; set; }
+        public string  Description { get; set; } = string.Empty;
+        public decimal Quantity    { get; set; } = 1;
+        public decimal UnitPrice   { get; set; }
+        public decimal ExtendedPrice => Math.Round(Quantity * UnitPrice, 2);
+    }
+}

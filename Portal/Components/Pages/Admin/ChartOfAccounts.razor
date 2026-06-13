@@ -1,0 +1,439 @@
+@page "/portal/admin/chart-of-accounts"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject ChartOfAccountsService CoaService
+@inject AccountCategoryService CategoryService
+@inject AccountTypeService     TypeService
+@inject CoaSegmentsService     SegmentsService
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Chart Of Accounts — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Chart Of Accounts</h1>
+    </div>
+
+    <!-- ── CoA Segment Configuration ─────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Account Number Segments</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Define the segments (positions) that make up an account number (e.g. Entity, Location, Account).
+            Each segment is identified by its position number (1, 2, 3…).
+            Locations reference a segment number to indicate which segment their code occupies.
+        </p>
+
+        @if (!string.IsNullOrEmpty(_segMessage))
+        {
+            <div class="alert @(_segError ? "alert-error" : "alert-success")" style="margin-bottom:12px;">@_segMessage</div>
+        }
+
+        @if (_segments.Count > 0)
+        {
+            <table class="data-table" style="max-width:520px;margin-bottom:16px;">
+                <thead>
+                    <tr>
+                        <th style="width:80px;text-align:center;">#</th>
+                        <th>Description</th>
+                        <th style="width:100px;text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var seg in _segments)
+                    {
+                        <tr @key="seg.SegmentNumber">
+                            <td style="text-align:center;font-weight:600;">@seg.SegmentNumber</td>
+                            <td>
+                                @if (_editSegNum == seg.SegmentNumber)
+                                {
+                                    <input type="text" @bind="_editSegDesc" @bind:event="oninput" maxlength="100"
+                                           style="width:100%;" />
+                                }
+                                else
+                                {
+                                    @seg.Description
+                                }
+                            </td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                @if (_editSegNum == seg.SegmentNumber)
+                                {
+                                    <button class="btn-sm btn-primary"    @onclick="SaveSegmentAsync">Save</button>
+                                    <button class="btn-sm btn-secondary"  @onclick="CancelSegEdit">Cancel</button>
+                                }
+                                else
+                                {
+                                    <button class="btn-sm btn-secondary" @onclick="() => BeginSegEdit(seg)">Edit</button>
+                                    <button class="btn-sm btn-danger"    @onclick="() => DeleteSegmentAsync(seg.SegmentNumber)">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+            <div class="form-row" style="margin:0;min-width:60px;max-width:80px;">
+                <label>#</label>
+                <input type="number" @bind="_newSegNum" min="1" step="1" style="width:100%;" />
+            </div>
+            <div class="form-row" style="margin:0;flex:1;min-width:160px;">
+                <label>Description <span class="required">*</span></label>
+                <input type="text" @bind="_newSegDesc" @bind:event="oninput" maxlength="100"
+                       placeholder="e.g. Location" />
+            </div>
+            <div style="padding-bottom:1px;">
+                <button class="btn-primary" @onclick="AddSegmentAsync"
+                        disabled="@(string.IsNullOrWhiteSpace(_newSegDesc) || _newSegNum < 1)">
+                    Add Segment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Import Section ─────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Accounts</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required columns (header row):
+            <strong>Account Name</strong>, <strong>Account Description</strong>,
+            <strong>Account Category</strong>, <strong>Account Type</strong>.
+            Missing categories or types are created automatically.
+        </p>
+
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;"
+                       placeholder="," title="Single character delimiter (default: comma)" />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">
+                    Leave blank for comma
+                </span>
+            </div>
+        }
+
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="ImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Accounts created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.CategoriesCreated > 0)
+                { <span> New categories: @_importResult.CategoriesCreated.</span> }
+                @if (_importResult.TypesCreated > 0)
+                { <span> New types: @_importResult.TypesCreated.</span> }
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors)
+                        { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Add / Edit Form ────────────────────────────────────────────────── -->
+    @if (!string.IsNullOrEmpty(_crudMessage))
+    {
+        <div class="alert @(_crudError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_crudMessage</div>
+    }
+
+    <div class="form-card" style="max-width:700px;margin-bottom:24px;">
+        <h2 class="form-section-title">@(_editId == 0 ? "Add Account" : "Edit Account")</h2>
+        <div class="form-row">
+            <label>Account Name <span class="required">*</span></label>
+            <input type="text" @bind="_accName" @bind:event="oninput" maxlength="200" placeholder="Account name" />
+        </div>
+        <div class="form-row">
+            <label>Description</label>
+            <input type="text" @bind="_accDesc" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
+        </div>
+        <div class="form-row" style="max-width:320px;">
+            <label>Category</label>
+            <select @bind="_accCategoryId">
+                <option value="0">— None —</option>
+                @foreach (var c in _categories)
+                { <option value="@c.CategoryID">@c.Name</option> }
+            </select>
+        </div>
+        <div class="form-row" style="max-width:320px;">
+            <label>Account Type</label>
+            <select @bind="_accTypeId">
+                <option value="0">— None —</option>
+                @foreach (var t in _types)
+                { <option value="@t.TypeID">@t.Name</option> }
+            </select>
+        </div>
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="SaveAccountAsync" disabled="@string.IsNullOrWhiteSpace(_accName)">
+                @(_editId == 0 ? "Add Account" : "Save Changes")
+            </button>
+            @if (_editId != 0)
+            {
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            }
+        </div>
+    </div>
+
+    <!-- ── Accounts Table ─────────────────────────────────────────────────── -->
+    <div class="table-card">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
+            @_accounts.Count account(s)
+        </div>
+        @if (_accounts.Count == 0)
+        {
+            <p style="padding:16px;color:var(--color-text-muted);">No accounts defined yet. Add one above or import a file.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Account Name</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th style="width:120px;text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in _accounts)
+                    {
+                        <tr @key="a.AccountID">
+                            <td>@a.AccountName</td>
+                            <td>@a.AccountDescription</td>
+                            <td>@a.CategoryName</td>
+                            <td>@a.TypeName</td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(a)">Edit</button>
+                                <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(a)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Account</h3>
+            <p>Permanently delete <strong>@_deleteTarget.AccountName</strong>?</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAccountAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ── Segment configuration ─────────────────────────────────────────────────
+    private List<Portal.Models.CoaSegment> _segments    = [];
+    private int    _newSegNum    = 1;
+    private string _newSegDesc   = string.Empty;
+    private int    _editSegNum   = 0;
+    private string _editSegDesc  = string.Empty;
+    private string _segMessage   = string.Empty;
+    private bool   _segError;
+
+    // ── Data ──────────────────────────────────────────────────────────────────
+    private List<Portal.Models.ChartOfAccount>   _accounts   = [];
+    private List<Portal.Models.AccountCategory>  _categories = [];
+    private List<Portal.Models.AccountType>      _types      = [];
+
+    // ── Import state ──────────────────────────────────────────────────────────
+    private IBrowserFile?              _importFile;
+    private bool                       _showDelimiter;
+    private string                     _delimiter    = ",";
+    private bool                       _importing;
+    private Portal.Models.ImportResult? _importResult;
+
+    // ── CRUD state ────────────────────────────────────────────────────────────
+    private int    _editId        = 0;
+    private string _accName       = string.Empty;
+    private string _accDesc       = string.Empty;
+    private int    _accCategoryId = 0;
+    private int    _accTypeId     = 0;
+    private string _crudMessage   = string.Empty;
+    private bool   _crudError;
+    private Portal.Models.ChartOfAccount? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var segTask  = SegmentsService.GetAllAsync();
+        var catTask  = CategoryService.GetAllAsync();
+        var typeTask = TypeService.GetAllAsync();
+        var accTask  = CoaService.GetAllAsync();
+        await Task.WhenAll(segTask, catTask, typeTask, accTask);
+        _segments   = segTask.Result;
+        _categories = catTask.Result;
+        _types      = typeTask.Result;
+        _accounts   = accTask.Result;
+        _newSegNum  = _segments.Count == 0 ? 1 : _segments[^1].SegmentNumber + 1;
+    }
+
+    // ── Segment CRUD ──────────────────────────────────────────────────────────
+
+    private async Task AddSegmentAsync()
+    {
+        try
+        {
+            await SegmentsService.UpsertAsync(_newSegNum, _newSegDesc);
+            _segments   = await SegmentsService.GetAllAsync();
+            _newSegNum  = _segments[^1].SegmentNumber + 1;
+            _newSegDesc = string.Empty;
+            _segMessage = string.Empty;
+        }
+        catch (Exception ex) { _segMessage = ex.Message; _segError = true; }
+    }
+
+    private void BeginSegEdit(Portal.Models.CoaSegment seg)
+    {
+        _editSegNum  = seg.SegmentNumber;
+        _editSegDesc = seg.Description;
+        _segMessage  = string.Empty;
+    }
+
+    private void CancelSegEdit() { _editSegNum = 0; _editSegDesc = string.Empty; }
+
+    private async Task SaveSegmentAsync()
+    {
+        try
+        {
+            await SegmentsService.UpsertAsync(_editSegNum, _editSegDesc);
+            _segments  = await SegmentsService.GetAllAsync();
+            _segMessage = $"Segment {_editSegNum} updated.";
+            _segError   = false;
+            CancelSegEdit();
+        }
+        catch (Exception ex) { _segMessage = ex.Message; _segError = true; }
+    }
+
+    private async Task DeleteSegmentAsync(int num)
+    {
+        try
+        {
+            await SegmentsService.DeleteAsync(num);
+            _segments  = await SegmentsService.GetAllAsync();
+            _segMessage = $"Segment {num} deleted.";
+            _segError   = false;
+        }
+        catch (Exception ex) { _segMessage = ex.Message; _segError = true; }
+    }
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile   = e.File;
+        _importResult = null;
+        var ext = Path.GetExtension(e.File.Name).ToLowerInvariant();
+        _showDelimiter = ext is not (".xlsx" or ".xls");
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing    = true;
+        _importResult = null;
+        try
+        {
+            char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await CoaService.ImportAsync(stream, _importFile.Name, delim);
+            // Refresh all lists in case import created categories/types
+            _categories = await CategoryService.GetAllAsync();
+            _types      = await TypeService.GetAllAsync();
+            _accounts   = await CoaService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _importResult = new Portal.Models.ImportResult { Errors = [$"Import failed: {ex.Message}"] };
+        }
+        finally { _importing = false; }
+    }
+
+    // ── CRUD ─────────────────────────────────────────────────────────────────
+
+    private void BeginEdit(Portal.Models.ChartOfAccount a)
+    {
+        _editId        = a.AccountID;
+        _accName       = a.AccountName;
+        _accDesc       = a.AccountDescription;
+        _accCategoryId = a.CategoryID ?? 0;
+        _accTypeId     = a.TypeID     ?? 0;
+        _crudMessage   = string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        _editId        = 0;
+        _accName       = string.Empty;
+        _accDesc       = string.Empty;
+        _accCategoryId = 0;
+        _accTypeId     = 0;
+    }
+
+    private async Task SaveAccountAsync()
+    {
+        var item = new Portal.Models.ChartOfAccount
+        {
+            AccountID          = _editId,
+            AccountName        = _accName,
+            AccountDescription = _accDesc,
+            CategoryID         = _accCategoryId == 0 ? null : _accCategoryId,
+            TypeID             = _accTypeId     == 0 ? null : _accTypeId,
+        };
+        try
+        {
+            if (_editId == 0)
+            {
+                await CoaService.CreateAsync(item);
+                _crudMessage = $"Account \"{_accName}\" added.";
+            }
+            else
+            {
+                await CoaService.UpdateAsync(item);
+                _crudMessage = $"Account \"{_accName}\" updated.";
+            }
+            _crudError = false;
+            CancelEdit();
+            _accounts = await CoaService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _crudMessage = ex.Message.Contains("UNIQUE") ? $"An account named \"{_accName}\" already exists." : ex.Message;
+            _crudError   = true;
+        }
+    }
+
+    private void ConfirmDelete(Portal.Models.ChartOfAccount a) => _deleteTarget = a;
+    private void CancelDelete()                                  => _deleteTarget = null;
+
+    private async Task DeleteAccountAsync()
+    {
+        if (_deleteTarget is null) return;
+        await CoaService.DeleteAsync(_deleteTarget.AccountID);
+        _crudMessage  = $"Account \"{_deleteTarget.AccountName}\" deleted.";
+        _crudError    = false;
+        _deleteTarget = null;
+        _accounts     = await CoaService.GetAllAsync();
+    }
+}

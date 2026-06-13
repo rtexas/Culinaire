@@ -1,0 +1,74 @@
+@* Reusable color picker: native color wheel + hex + RGB inputs, all synced bidirectionally *@
+
+<div class="color-picker-row">
+    <label class="color-picker-label">@Label</label>
+    <div class="color-picker-inputs">
+        <input type="color" class="color-wheel"
+               value="@HexValue"
+               @oninput="OnWheelInput" />
+        <input type="text" class="color-hex" maxlength="7" placeholder="#RRGGBB"
+               value="@HexValue"
+               @oninput="OnHexInput" />
+        <span class="rgb-label">R</span>
+        <input type="number" class="color-rgb" min="0" max="255"
+               value="@_r" @oninput="e => OnRgbInput(e, 0)" />
+        <span class="rgb-label">G</span>
+        <input type="number" class="color-rgb" min="0" max="255"
+               value="@_g" @oninput="e => OnRgbInput(e, 1)" />
+        <span class="rgb-label">B</span>
+        <input type="number" class="color-rgb" min="0" max="255"
+               value="@_b" @oninput="e => OnRgbInput(e, 2)" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public string    Label      { get; set; } = string.Empty;
+    [Parameter] public string    HexValue   { get; set; } = "#000000";
+    [Parameter] public EventCallback<string> HexValueChanged { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private int _r, _g, _b;
+
+    protected override void OnParametersSet() => ParseHex(HexValue);
+
+    private void OnWheelInput(ChangeEventArgs e)
+    {
+        var hex = e.Value?.ToString() ?? "#000000";
+        ParseHex(hex);
+        HexValueChanged.InvokeAsync(hex);
+        OnChanged.InvokeAsync();
+    }
+
+    private void OnHexInput(ChangeEventArgs e)
+    {
+        var hex = e.Value?.ToString() ?? string.Empty;
+        if (hex.Length == 7 && hex.StartsWith('#'))
+        {
+            ParseHex(hex);
+            HexValueChanged.InvokeAsync(hex);
+            OnChanged.InvokeAsync();
+        }
+    }
+
+    private void OnRgbInput(ChangeEventArgs e, int channel)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var v)) return;
+        v = Math.Clamp(v, 0, 255);
+        if (channel == 0) _r = v;
+        else if (channel == 1) _g = v;
+        else _b = v;
+        var hex = $"#{_r:X2}{_g:X2}{_b:X2}";
+        HexValueChanged.InvokeAsync(hex);
+        OnChanged.InvokeAsync();
+    }
+
+    private void ParseHex(string hex)
+    {
+        if (hex.Length == 7 && hex.StartsWith('#'))
+        {
+            _r = Convert.ToInt32(hex.Substring(1, 2), 16);
+            _g = Convert.ToInt32(hex.Substring(3, 2), 16);
+            _b = Convert.ToInt32(hex.Substring(5, 2), 16);
+        }
+    }
+}

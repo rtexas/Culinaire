@@ -1,0 +1,61 @@
+@page "/portal/payroll"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
+@inject PermissionService      PermissionService
+@inject LocationSessionService LocationSession
+@inject NavigationManager      Nav
+
+<PageTitle>Payroll — Culinaire Portal</PageTitle>
+
+@if (!LocationSession.HasLocation)
+{
+    <div class="no-location-guard">
+        <p>No location selected.</p>
+        <a class="btn-secondary" href="/portal">Return to Dashboard</a>
+    </div>
+}
+else if (_level == "None")
+{
+    <div class="error-page"><p>You do not have access to Payroll.</p></div>
+}
+else
+{
+    <div class="module-page">
+        <div class="module-header">
+            <h1 class="page-heading">Payroll</h1>
+            @if (_level == "ReadWrite")
+            {
+                <button class="btn-primary" disabled>+ New Entry</button>
+            }
+        </div>
+
+        <div class="location-banner">
+            📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+        </div>
+
+        <div class="module-placeholder">
+            <div class="placeholder-icon">💼</div>
+            <h2>Payroll Module</h2>
+            <p>Payroll processing and reporting will be displayed here.</p>
+            @if (_level == "Read")
+            {
+                <span class="access-badge read-only">Read Only</span>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string _level = "None";
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState == null) return;
+        var state = await AuthState;
+        var uid   = int.Parse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+        var role  = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "Viewer";
+        _level    = await PermissionService.GetLevelAsync(uid, role, "Payroll");
+    }
+}

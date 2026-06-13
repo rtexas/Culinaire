@@ -1,0 +1,25 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Publish output
+publish/
+out/
+
+# NuGet
+*.nupkg
+.nuget/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Windows service log files written at runtime
+*.log

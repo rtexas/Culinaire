@@ -1,0 +1,122 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+<ThemeStyleProvider />
+
+<div class="portal-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar @(_sidebarOpen ? "open" : "")">
+        <div class="sidebar-header">
+            <img class="sidebar-logo" src="@_logoPath" alt="Logo"
+                 onerror="this.style.display='none'" />
+            <span class="sidebar-title">@_portalName</span>
+        </div>
+        <NavMenu OnNavigate="CloseSidebar" />
+        <div class="sidebar-footer">
+            <button class="btn-logout" @onclick="SignOut">Sign Out</button>
+        </div>
+    </aside>
+
+    <!-- Main area -->
+    <div class="main-area">
+        <header class="topbar">
+            <button class="hamburger" @onclick="ToggleSidebar" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <span class="topbar-title">@_pageTitle</span>
+            <span class="topbar-user">
+                <AuthorizeView>
+                    <Authorized>
+                        <span class="user-name">@context.User.FindFirst("FullName")?.Value</span>
+                        <span class="user-role role-badge role-@context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value?.ToLower()">
+                            @context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                        </span>
+                    </Authorized>
+                </AuthorizeView>
+            </span>
+        </header>
+
+        <main class="content-area">
+            <ErrorBoundary @ref="_errorBoundary">
+                <ChildContent>@Body</ChildContent>
+                <ErrorContent Context="ex">
+                    <div class="alert alert-error" style="margin:24px;">
+                        <strong>An error occurred loading this page.</strong>
+                        <p style="margin:8px 0 0;font-size:13px;font-family:monospace;">@ex.Message</p>
+                        <button class="btn-secondary" style="margin-top:12px;"
+                                @onclick='() => { _errorBoundary?.Recover(); Nav.NavigateTo("/portal"); }'>
+                            Go to Dashboard
+                        </button>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
+        </main>
+    </div>
+
+    @if (_sidebarOpen)
+    {
+        <div class="sidebar-overlay" @onclick="CloseSidebar"></div>
+    }
+</div>
+
+@code {
+    private ErrorBoundary? _errorBoundary;
+    private bool   _sidebarOpen;
+    private string _portalName = "Culinaire";
+    private string _logoPath   = "/images/logo.png";
+    private string _pageTitle  = string.Empty;
+
+    [Inject] private ThemeService ThemeService { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        _portalName = ThemeService.Current.PortalName;
+        _logoPath   = ThemeService.Current.LogoPath;
+        Nav.LocationChanged += OnLocationChanged;
+        UpdateTitle();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        UpdateTitle();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateTitle()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        _pageTitle = path switch
+        {
+            "/portal"              => "Dashboard",
+            "/portal/eod-sales"   => "EOD Sales",
+            "/portal/payables"    => "Payables",
+            "/portal/payables/new"=> "New Invoice",
+            "/portal/checks"      => "Checks",
+            "/portal/payroll"     => "Payroll",
+            "/portal/admin/users"              => "Users",
+            "/portal/admin/permissions"        => "Permissions",
+            "/portal/admin/chart-of-accounts"  => "Chart Of Accounts",
+            "/portal/admin/account-categories" => "Account Categories",
+            "/portal/admin/account-types"      => "Account Types",
+            "/portal/admin/items"              => "Items",
+            "/portal/admin/shipping-methods"   => "Shipping Methods",
+            "/portal/admin/locations"          => "Locations",
+            "/portal/admin/vendors"            => "Vendors",
+            "/portal/admin/countries"          => "Countries",
+            "/portal/admin/states-regions"     => "States / Regions",
+            "/portal/admin/logo"               => "Logo Manager",
+            "/portal/admin/theme"              => "Theme Editor",
+            _                     => "Portal"
+        };
+        _errorBoundary?.Recover();
+    }
+
+    private void SignOut()        => Nav.NavigateTo("/logout", forceLoad: true);
+    private void ToggleSidebar() => _sidebarOpen = !_sidebarOpen;
+    private void CloseSidebar()  => _sidebarOpen = false;
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

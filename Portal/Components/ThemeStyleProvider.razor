@@ -1,0 +1,11 @@
+@inject ThemeService ThemeService
+@implements IDisposable
+
+<HeadContent>
+    <style id="portal-theme">@ThemeService.Current.ToCssVariables()</style>
+</HeadContent>
+
+@code {
+    protected override void OnInitialized() => ThemeService.OnChange += StateHasChanged;
+    public void Dispose()                   => ThemeService.OnChange -= StateHasChanged;
+}

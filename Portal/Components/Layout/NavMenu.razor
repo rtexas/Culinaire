@@ -1,0 +1,161 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@implements IDisposable
+@inject PermissionService      PermissionService
+@inject NavigationManager      Nav
+@inject FileLoggerService      FileLogger
+@inject LocationSessionService LocationSession
+
+<AuthorizeView>
+    <Authorized>
+        <nav class="nav-menu">
+            @if (!string.IsNullOrEmpty(_navError))
+            {
+                <div style="margin:8px;padding:8px;background:#fee;color:#900;border-radius:4px;font-size:11px;word-break:break-all;">
+                    <strong>Nav error:</strong> @_navError
+                </div>
+            }
+
+            @foreach (var item in _navItems)
+            {
+                @if (LocationSession.HasLocation)
+                {
+                    <a class="nav-item @(IsActive(item.Url) ? "active" : "")"
+                       href="@item.Url" @onclick="() => OnNavigate.InvokeAsync()">
+                        <span class="nav-icon">@item.Icon</span>
+                        <span class="nav-label">@item.Label</span>
+                    </a>
+                }
+                else
+                {
+                    <span class="nav-item nav-item-disabled" title="Select a location on the Dashboard first">
+                        <span class="nav-icon">@item.Icon</span>
+                        <span class="nav-label">@item.Label</span>
+                    </span>
+                }
+            }
+
+            @if (context.User.IsInRole("Administrator"))
+            {
+                <div class="nav-section-label">Administration</div>
+
+                <div class="nav-group-toggle @(_setupOpen ? "open" : "")" @onclick="ToggleSetup">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Setup</span>
+                    <span class="nav-chevron">@(_setupOpen ? "▴" : "▾")</span>
+                </div>
+
+                @if (_setupOpen)
+                {
+                    <div class="nav-submenu">
+                        @foreach (var (label, url) in _setupItems)
+                        {
+                            <a class="nav-item @(IsActive(url) ? "active" : "")"
+                               href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                <span class="nav-label">@label</span>
+                            </a>
+                        }
+                    </div>
+                }
+            }
+        </nav>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public EventCallback OnNavigate { get; set; }
+
+    private record NavItem(string Label, string Url, string Icon);
+    private List<NavItem> _navItems = [];
+    private bool   _setupOpen;
+    private string _navError = string.Empty;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private static readonly (string Label, string Url)[] _setupItems =
+    [
+        ("Users",              "/portal/admin/users"),
+        ("Permissions",        "/portal/admin/permissions"),
+        ("Chart Of Accounts",  "/portal/admin/chart-of-accounts"),
+        ("Account Categories", "/portal/admin/account-categories"),
+        ("Account Types",      "/portal/admin/account-types"),
+        ("Items",              "/portal/admin/items"),
+        ("Shipping Methods",   "/portal/admin/shipping-methods"),
+        ("Vendors",            "/portal/admin/vendors"),
+        ("Countries",          "/portal/admin/countries"),
+        ("States / Regions",   "/portal/admin/states-regions"),
+        ("Locations",          "/portal/admin/locations"),
+        ("Logo Manager",       "/portal/admin/logo"),
+        ("Theme Editor",       "/portal/admin/theme"),
+    ];
+
+    protected override void OnInitialized()
+    {
+        LocationSession.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (AuthState == null) return;
+            var state     = await AuthState;
+            var user      = state.User;
+            var userIdStr = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var roleType  = user.FindFirst(ClaimTypes.Role)?.Value ?? "Viewer";
+
+            if (!int.TryParse(userIdStr, out var userId)) return;
+
+            var accessible = await PermissionService.GetAccessibleModulesAsync(userId, roleType);
+            _navItems = accessible.Select(a => new NavItem(
+                a.Module.DisplayName,
+                a.Module.RouteUrl,
+                ModuleIcon(a.Module.ModuleName)
+            )).ToList();
+
+            var path = new Uri(Nav.Uri).AbsolutePath;
+            _setupOpen = path.StartsWith("/portal/admin/", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _navError = $"Init: {ex.GetType().Name}: {ex.Message}";
+            FileLogger.WriteException("NavMenu.OnInitializedAsync", ex);
+        }
+    }
+
+    private void OnLocationChanged() => InvokeAsync(StateHasChanged);
+
+    private void ToggleSetup()
+    {
+        try { _setupOpen = !_setupOpen; }
+        catch (Exception ex)
+        {
+            _navError = $"Toggle: {ex.GetType().Name}: {ex.Message}";
+            FileLogger.WriteException("NavMenu.ToggleSetup", ex);
+        }
+    }
+
+    private bool IsActive(string url)
+    {
+        try
+        {
+            var current = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+            return current.Equals(url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    private static string ModuleIcon(string name) => name switch
+    {
+        "EodSales" => "📊",
+        "Payables" => "💰",
+        "Checks"   => "🧾",
+        "Payroll"  => "💼",
+        _          => "📄"
+    };
+
+    public void Dispose()
+    {
+        LocationSession.LocationChanged -= OnLocationChanged;
+    }
+}

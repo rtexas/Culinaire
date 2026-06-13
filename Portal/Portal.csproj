@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Portal</RootNamespace>
+    <AssemblyName>Portal</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="SQL\Portal_Full.sql" />
+    <None Include="SQL\Addendum_UserAddress.sql" />
+    <None Include="SQL\Addendum_Items.sql" />
+    <None Include="SQL\Addendum_Payables.sql" />
+    <None Include="SQL\Addendum_Locations.sql" />
+    <None Include="SQL\Addendum_CoaSegments.sql" />
+  </ItemGroup>
+
+</Project>

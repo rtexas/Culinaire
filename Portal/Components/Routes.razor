@@ -1,0 +1,27 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <RedirectTo Url="/unauthorized" />
+                    }
+                </NotAuthorized>
+                <Authorizing>
+                    <div class="loading-screen"><span>Loading…</span></div>
+                </Authorizing>
+            </AuthorizeRouteView>
+        </Found>
+        <NotFound>
+            <PageTitle>Not Found</PageTitle>
+            <p>Sorry, the page you requested could not be found.</p>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

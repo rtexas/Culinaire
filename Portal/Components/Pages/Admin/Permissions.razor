@@ -1,0 +1,176 @@
+@page "/portal/admin/permissions"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject UserService       UserService
+@inject PermissionService PermissionService
+@inject LocationService   LocationService
+
+<PageTitle>Permissions — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Permissions</h1>
+    </div>
+    <p class="page-sub">
+        Set per-module access levels and location access for each user.
+        Administrators always have full access to all modules and locations.
+        Viewers always have Read-only module access.
+    </p>
+
+    <div class="form-row" style="max-width:360px;margin-bottom:24px;">
+        <label>Select User</label>
+        <select @onchange="OnUserChanged">
+            <option value="0">— Select a user —</option>
+            @foreach (var u in _users.Where(u => u.RoleType != "Administrator"))
+            {
+                <option value="@u.UserID" selected="@(_selectedUserId == u.UserID)">
+                    @u.FullName (@u.Username) — @u.RoleType
+                </option>
+            }
+        </select>
+    </div>
+
+    @if (_selectedUserId > 0)
+    {
+        <!-- ── Module Permissions (Users only) ──────────────────────────── -->
+        @if (_selectedUserRole == "User")
+        {
+            <h2 class="form-section-title" style="margin-bottom:12px;">Module Permissions</h2>
+            @if (_permissions.Count > 0)
+            {
+                <div class="table-card" style="max-width:500px;margin-bottom:28px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Module</th>
+                                <th>Access Level</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in _permissions)
+                            {
+                                var mid = p.ModuleID;
+                                <tr @key="mid">
+                                    <td>@p.ModuleDisplayName</td>
+                                    <td>
+                                        <select value="@_levels[mid]" @onchange="e => OnPermissionChange(mid, e.Value!.ToString()!)">
+                                            <option value="None">No Access</option>
+                                            <option value="Read">Read Only</option>
+                                            <option value="ReadWrite">Read + Write</option>
+                                        </select>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (!string.IsNullOrEmpty(_moduleSavedMsg))
+                {
+                    <div class="alert alert-success" style="margin-bottom:16px;">@_moduleSavedMsg</div>
+                }
+            }
+        }
+
+        <!-- ── Location Access ──────────────────────────────────────────── -->
+        <h2 class="form-section-title" style="margin-bottom:12px;">Location Access</h2>
+        <p style="font-size:13px;color:var(--color-text-muted);margin-bottom:12px;">
+            Check the locations this user is allowed to access. Unchecked locations are hidden from them entirely.
+        </p>
+
+        @if (_allLocations.Count == 0)
+        {
+            <p style="color:var(--color-text-muted);font-size:13px;">
+                No locations defined. Create locations under Setup → Locations.
+            </p>
+        }
+        else
+        {
+            <div class="form-card" style="max-width:500px;padding:16px;">
+                @foreach (var loc in _allLocations)
+                {
+                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                        <input type="checkbox"
+                               checked="@_userLocationIds.Contains(loc.LocationID)"
+                               @onchange="e => OnLocationToggle(loc.LocationID, (bool)e.Value!)" />
+                        <code style="font-size:.85rem;min-width:70px;">@loc.Code</code>
+                        <span>@loc.Name</span>
+                    </label>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(_locationSavedMsg))
+            {
+                <div class="alert alert-success" style="margin-top:12px;">@_locationSavedMsg</div>
+            }
+        }
+    }
+</div>
+
+@code {
+    private List<Portal.Models.User>                 _users       = [];
+    private List<Portal.Models.UserModulePermission> _permissions = [];
+    private Dictionary<int, string>                  _levels      = new();
+    private List<Portal.Models.Location>             _allLocations    = [];
+    private HashSet<int>                             _userLocationIds = [];
+
+    private int    _selectedUserId;
+    private string _selectedUserRole  = string.Empty;
+    private string _moduleSavedMsg    = string.Empty;
+    private string _locationSavedMsg  = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var usersTask     = UserService.GetAllAsync();
+        var locationsTask = LocationService.GetAllAsync();
+        await Task.WhenAll(usersTask, locationsTask);
+        _users        = usersTask.Result;
+        _allLocations = locationsTask.Result;
+    }
+
+    private async Task OnUserChanged(ChangeEventArgs e)
+    {
+        _selectedUserId  = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _moduleSavedMsg  = string.Empty;
+        _locationSavedMsg = string.Empty;
+
+        if (_selectedUserId == 0)
+        {
+            _permissions     = [];
+            _userLocationIds = [];
+            _selectedUserRole = string.Empty;
+            return;
+        }
+
+        var user = _users.FirstOrDefault(u => u.UserID == _selectedUserId);
+        _selectedUserRole = user?.RoleType ?? string.Empty;
+
+        var permTask = _selectedUserRole == "User"
+            ? PermissionService.GetUserPermissionsAsync(_selectedUserId)
+            : Task.FromResult(new List<Portal.Models.UserModulePermission>());
+        var locTask = LocationService.GetUserLocationIDsAsync(_selectedUserId);
+
+        await Task.WhenAll(permTask, locTask);
+        _permissions     = permTask.Result;
+        _levels          = _permissions.ToDictionary(p => p.ModuleID, p => p.PermissionLevel);
+        _userLocationIds = [.. locTask.Result];
+        StateHasChanged();
+    }
+
+    private async Task OnPermissionChange(int moduleId, string level)
+    {
+        _levels[moduleId] = level;
+        var p = _permissions.FirstOrDefault(x => x.ModuleID == moduleId);
+        if (p is null) return;
+        p.PermissionLevel = level;
+        await PermissionService.UpsertPermissionAsync(_selectedUserId, moduleId, level);
+        _moduleSavedMsg = $"Saved: {p.ModuleDisplayName} → {level}";
+        StateHasChanged();
+    }
+
+    private async Task OnLocationToggle(int locationId, bool isChecked)
+    {
+        if (isChecked) _userLocationIds.Add(locationId);
+        else           _userLocationIds.Remove(locationId);
+        await LocationService.SetUserLocationsAsync(_selectedUserId, [.. _userLocationIds]);
+        _locationSavedMsg = "Location access saved.";
+        StateHasChanged();
+    }
+}

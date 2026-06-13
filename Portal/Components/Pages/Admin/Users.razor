@@ -1,0 +1,168 @@
+@page "/portal/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject UserService UserService
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Users — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">User Management</h1>
+        <button class="btn-primary" @onclick="GoToNew">+ New User</button>
+    </div>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Users</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required column: <strong>Username</strong>.
+            Optional columns: <strong>FullName, Email, RoleType, Password, IsActive,
+            Address1, Address2, Address3, City, State, PostalCode, Country</strong>.
+            Existing users matched by Username are updated. New users without a Password receive a default password.
+        </p>
+
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="RunImportAsync"
+                    disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── User list ──────────────────────────────────────────────────────── -->
+    @if (_loading)
+    {
+        <div class="loading-spinner">Loading users…</div>
+    }
+    else
+    {
+        <div class="table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Full Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>City</th>
+                        <th>State</th>
+                        <th>Status</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in _users)
+                    {
+                        <tr>
+                            <td>@u.Username</td>
+                            <td>@u.FullName</td>
+                            <td>@(u.Email ?? "—")</td>
+                            <td><span class="role-badge role-@u.RoleType.ToLower()">@u.RoleType</span></td>
+                            <td>@(string.IsNullOrEmpty(u.City) ? "—" : u.City)</td>
+                            <td>@(string.IsNullOrEmpty(u.StateCode) ? "—" : u.StateCode)</td>
+                            <td>
+                                <span class="status-badge @(u.IsActive ? "active" : "inactive")">
+                                    @(u.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td>@(u.LastLoginAt?.ToString("MM/dd/yyyy HH:mm") ?? "Never")</td>
+                            <td class="actions-cell">
+                                <button class="btn-sm" @onclick="() => Edit(u.UserID)">Edit</button>
+                                <button class="btn-sm btn-sm-danger" @onclick="() => ToggleActive(u)"
+                                        disabled="@(u.Username == "Administrator")">
+                                    @(u.IsActive ? "Deactivate" : "Activate")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Portal.Models.User> _users  = [];
+    private bool                     _loading = true;
+
+    // import state
+    private IBrowserFile? _importFile;
+    private bool          _showDelimiter;
+    private string        _delimiter    = ",";
+    private bool          _importing;
+    private ImportResult? _importResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users   = await UserService.GetAllAsync();
+        _loading = false;
+    }
+
+    private void GoToNew()        => Nav.NavigateTo("/portal/admin/users/new");
+    private void Edit(int userId) => Nav.NavigateTo($"/portal/admin/users/{userId}");
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        _showDelimiter = Path.GetExtension(e.File.Name).ToLowerInvariant() is not (".xlsx" or ".xls");
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing    = true;
+        _importResult = null;
+        try
+        {
+            char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await UserService.ImportAsync(stream, _importFile.Name, delim);
+            _users        = await UserService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _importResult = new ImportResult { Errors = [$"Import failed: {ex.Message}"] };
+        }
+        finally { _importing = false; }
+    }
+
+    private async Task ToggleActive(Portal.Models.User user)
+    {
+        user.IsActive = !user.IsActive;
+        await UserService.UpdateAsync(user);
+        _users = await UserService.GetAllAsync();
+    }
+}

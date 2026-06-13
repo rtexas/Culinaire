@@ -1,0 +1,123 @@
+@page "/portal/admin/logo"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject IWebHostEnvironment Env
+@inject ThemeService ThemeService
+@inject SettingsService SettingsService
+
+<PageTitle>Logo Manager — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Logo Manager</h1>
+    </div>
+
+    <div class="form-card" style="max-width:600px;">
+        <div class="logo-preview-section">
+            <div class="logo-preview-label">Current Logo</div>
+            <div class="logo-preview-box">
+                <img src="@_currentLogoPath" alt="Current logo"
+                     onerror="this.style.display='none'" />
+            </div>
+            <div class="logo-path-text">Path: @_currentLogoPath</div>
+        </div>
+
+        <div class="form-section-label" style="margin-top:24px;">Upload New Logo</div>
+        <p class="hint-text">Accepted formats: PNG, JPG, SVG. Maximum size: 5 MB.</p>
+
+        <InputFile OnChange="OnFileSelected" accept=".png,.jpg,.jpeg,.svg" class="file-input" />
+
+        @if (_selectedFileName != null)
+        {
+            <div style="margin-top:10px;font-size:.9rem;">Selected: <b>@_selectedFileName</b></div>
+        }
+
+        @if (!string.IsNullOrEmpty(_errorMsg))
+        {
+            <div class="alert alert-error" style="margin-top:12px;">@_errorMsg</div>
+        }
+        @if (!string.IsNullOrEmpty(_successMsg))
+        {
+            <div class="alert alert-success" style="margin-top:12px;">@_successMsg</div>
+        }
+
+        <div class="form-actions" style="margin-top:20px;">
+            <button class="btn-primary" @onclick="UploadAsync" disabled="@(_fileContent == null)">Upload & Apply</button>
+            <button class="btn-secondary" @onclick="ResetDefault">Reset to Default</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string  _currentLogoPath = "/images/logo.png";
+    private string? _selectedFileName;
+    private byte[]? _fileContent;
+    private string  _fileExtension   = ".png";
+    private string  _errorMsg        = string.Empty;
+    private string  _successMsg      = string.Empty;
+
+    protected override void OnInitialized()
+        => _currentLogoPath = ThemeService.Current.LogoPath;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _errorMsg      = string.Empty;
+        _successMsg    = string.Empty;
+        var file = e.File;
+        if (file.Size > 5 * 1024 * 1024) { _errorMsg = "File exceeds 5 MB limit."; return; }
+        _selectedFileName = file.Name;
+        _fileExtension    = Path.GetExtension(file.Name).ToLowerInvariant();
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+        _fileContent = ms.ToArray();
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_fileContent == null) return;
+        _errorMsg   = string.Empty;
+        _successMsg = string.Empty;
+        try
+        {
+            var uploadsDir = Path.Combine(Env.WebRootPath, "uploads");
+            Directory.CreateDirectory(uploadsDir);
+            var fileName = $"logo{_fileExtension}";
+            await File.WriteAllBytesAsync(Path.Combine(uploadsDir, fileName), _fileContent);
+            var webPath = $"/uploads/{fileName}";
+            await SettingsService.UpdateAsync("Portal.LogoPath", webPath);
+
+            var c = ThemeService.Current;
+            ThemeService.Update(new PortalTheme
+            {
+                PortalName = c.PortalName, Tagline = c.Tagline, LogoPath = webPath,
+                BackgroundColor = c.BackgroundColor, TextColor = c.TextColor,
+                PrimaryColor = c.PrimaryColor, AccentColor = c.AccentColor,
+                SidebarBg = c.SidebarBg, SidebarText = c.SidebarText,
+                HeaderBg = c.HeaderBg, HeaderText = c.HeaderText,
+            });
+            _currentLogoPath  = webPath;
+            _successMsg       = "Logo uploaded and applied successfully.";
+            _fileContent      = null;
+            _selectedFileName = null;
+        }
+        catch (Exception ex)
+        {
+            _errorMsg = $"Upload failed: {ex.Message}";
+        }
+    }
+
+    private async Task ResetDefault()
+    {
+        await SettingsService.UpdateAsync("Portal.LogoPath", "/images/logo.png");
+        var c = ThemeService.Current;
+        ThemeService.Update(new PortalTheme
+        {
+            PortalName = c.PortalName, Tagline = c.Tagline, LogoPath = "/images/logo.png",
+            BackgroundColor = c.BackgroundColor, TextColor = c.TextColor,
+            PrimaryColor = c.PrimaryColor, AccentColor = c.AccentColor,
+            SidebarBg = c.SidebarBg, SidebarText = c.SidebarText,
+            HeaderBg = c.HeaderBg, HeaderText = c.HeaderText,
+        });
+        _currentLogoPath = "/images/logo.png";
+        _successMsg      = "Logo reset to default.";
+    }
+}

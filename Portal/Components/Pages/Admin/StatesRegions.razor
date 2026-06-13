@@ -1,0 +1,262 @@
+@page "/portal/admin/states-regions"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject StateRegionService StateRegionService
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>States / Regions — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">States / Regions</h1>
+    </div>
+    <p class="page-sub">Manage states and regions. Code must be unique (e.g. TX, CA, NY).</p>
+
+    <!-- ── Import Section ─────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import States / Regions</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required columns (header row):
+            <strong>Name</strong>, <strong>Code</strong>. Optional: <strong>Description</strong>.
+            Existing records matched by Code are updated; new Codes are created.
+        </p>
+
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="ImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Add / Edit Form ────────────────────────────────────────────────── -->
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
+    }
+
+    <div class="form-card" style="max-width:620px;margin-bottom:24px;">
+        <h2 class="form-section-title">@(_editId == 0 ? "Add State / Region" : "Edit State / Region")</h2>
+        <div style="display:grid;grid-template-columns:1fr 120px;gap:12px;">
+            <div class="form-row">
+                <label>Name <span class="required">*</span></label>
+                <input type="text" @bind="_name" @bind:event="oninput" maxlength="100" placeholder="e.g. Texas" />
+            </div>
+            <div class="form-row">
+                <label>Code <span class="required">*</span></label>
+                <input type="text" @bind="_code" @bind:event="oninput" maxlength="20"
+                       placeholder="e.g. TX" style="text-transform:uppercase;" />
+            </div>
+        </div>
+        <div class="form-row">
+            <label>Description</label>
+            <input type="text" @bind="_description" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
+        </div>
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="SaveAsync"
+                    disabled="@(string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_code))">
+                @(_editId == 0 ? "Add" : "Save Changes")
+            </button>
+            @if (_editId != 0)
+            {
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            }
+        </div>
+    </div>
+
+    <!-- ── List ───────────────────────────────────────────────────────────── -->
+    <div class="table-card">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
+            @_items.Count record(s)
+        </div>
+        @if (_items.Count == 0)
+        {
+            <p style="padding:16px;color:var(--color-text-muted);">No states or regions defined yet. Add one above or import a file.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:100px;">Code</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th style="width:120px;text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _items)
+                    {
+                        <tr @key="item.StateRegionID">
+                            <td><code style="font-size:.85rem;">@item.Code</code></td>
+                            <td>@item.Name</td>
+                            <td>@item.Description</td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(item)">Edit</button>
+                                <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(item)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete State / Region</h3>
+            <p>Permanently delete <strong>@_deleteTarget.Name (@_deleteTarget.Code)</strong>?</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Portal.Models.StateRegion> _items = [];
+
+    // Import state
+    private IBrowserFile?              _importFile;
+    private bool                       _showDelimiter;
+    private string                     _delimiter    = ",";
+    private bool                       _importing;
+    private Portal.Models.ImportResult? _importResult;
+
+    // CRUD state
+    private int    _editId      = 0;
+    private string _name        = string.Empty;
+    private string _code        = string.Empty;
+    private string _description = string.Empty;
+    private string _message     = string.Empty;
+    private bool   _isError;
+    private Portal.Models.StateRegion? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+        => _items = await StateRegionService.GetAllAsync();
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile   = e.File;
+        _importResult = null;
+        var ext = Path.GetExtension(e.File.Name).ToLowerInvariant();
+        _showDelimiter = ext is not (".xlsx" or ".xls");
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing    = true;
+        _importResult = null;
+        try
+        {
+            char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await StateRegionService.ImportAsync(stream, _importFile.Name, delim);
+            _items = await StateRegionService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _importResult = new Portal.Models.ImportResult { Errors = [$"Import failed: {ex.Message}"] };
+        }
+        finally { _importing = false; }
+    }
+
+    // ── CRUD ─────────────────────────────────────────────────────────────────
+
+    private void BeginEdit(Portal.Models.StateRegion item)
+    {
+        _editId      = item.StateRegionID;
+        _name        = item.Name;
+        _code        = item.Code;
+        _description = item.Description;
+        _message     = string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        _editId      = 0;
+        _name        = string.Empty;
+        _code        = string.Empty;
+        _description = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        var item = new Portal.Models.StateRegion
+        {
+            StateRegionID = _editId,
+            Name          = _name,
+            Code          = _code,
+            Description   = _description,
+        };
+        try
+        {
+            if (_editId == 0)
+            {
+                await StateRegionService.CreateAsync(item);
+                _message = $"Added: {_name} ({_code.ToUpperInvariant()}).";
+            }
+            else
+            {
+                await StateRegionService.UpdateAsync(item);
+                _message = $"Updated: {_name} ({_code.ToUpperInvariant()}).";
+            }
+            _isError = false;
+            CancelEdit();
+            _items = await StateRegionService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message.Contains("UNIQUE") ? $"Code \"{_code.ToUpperInvariant()}\" already exists." : ex.Message;
+            _isError = true;
+        }
+    }
+
+    private void ConfirmDelete(Portal.Models.StateRegion item) => _deleteTarget = item;
+    private void CancelDelete()                                  => _deleteTarget = null;
+
+    private async Task DeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        await StateRegionService.DeleteAsync(_deleteTarget.StateRegionID);
+        _message     = $"Deleted: {_deleteTarget.Name} ({_deleteTarget.Code}).";
+        _isError     = false;
+        _deleteTarget = null;
+        _items       = await StateRegionService.GetAllAsync();
+    }
+}

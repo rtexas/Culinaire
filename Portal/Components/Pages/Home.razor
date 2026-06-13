@@ -1,0 +1,120 @@
+@page "/portal"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject LocationService LocationService
+@inject LocationSessionService LocationSession
+
+<PageTitle>Dashboard — Culinaire Portal</PageTitle>
+
+<div class="dashboard">
+    <AuthorizeView Context="authCtx">
+        <Authorized>
+            <h1 class="page-heading">Welcome, @authCtx.User.FindFirst("FullName")?.Value</h1>
+
+            <!-- ── Location Selector ──────────────────────────────────────── -->
+            <div class="form-card" style="margin-bottom:24px;max-width:500px;">
+                <h2 class="form-section-title" style="margin-bottom:12px;">Location</h2>
+                @if (_locations.Count == 0)
+                {
+                    <p style="color:var(--color-text-muted);font-size:13px;">
+                        No locations have been configured yet. An Administrator can add them under Setup → Locations.
+                    </p>
+                }
+                else
+                {
+                    <div class="form-row" style="margin-bottom:0;">
+                        <select value="@_selectedId" @onchange="OnLocationChanged">
+                            <option value="0">— Select a Location —</option>
+                            @foreach (var loc in _locations)
+                            {
+                                <option value="@loc.LocationID">@loc.Code — @loc.Name</option>
+                            }
+                        </select>
+                    </div>
+                    @if (!LocationSession.HasLocation)
+                    {
+                        <p style="margin:8px 0 0;font-size:12px;color:var(--color-text-muted);">
+                            Select a location to enable the modules below.
+                        </p>
+                    }
+                }
+            </div>
+
+            <!-- ── Module Cards ───────────────────────────────────────────── -->
+            <div class="dashboard-cards">
+                @foreach (var card in _moduleCards)
+                {
+                    @if (LocationSession.HasLocation)
+                    {
+                        <a class="dash-card" href="@card.Url">
+                            <div class="dash-card-icon">@card.Icon</div>
+                            <div class="dash-card-label">@card.Label</div>
+                        </a>
+                    }
+                    else
+                    {
+                        <div class="dash-card dash-card-disabled">
+                            <div class="dash-card-icon">@card.Icon</div>
+                            <div class="dash-card-label">@card.Label</div>
+                            <div class="dash-card-hint">Select a location first</div>
+                        </div>
+                    }
+                }
+            </div>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private record ModuleCard(string Icon, string Label, string Url);
+    private static readonly ModuleCard[] _moduleCards =
+    [
+        new("📊", "EOD Sales", "/portal/eod-sales"),
+        new("💰", "Payables",  "/portal/payables"),
+        new("🧾", "Checks",    "/portal/checks"),
+        new("💼", "Payroll",   "/portal/payroll"),
+    ];
+
+    private List<Portal.Models.Location> _locations  = [];
+    private int                          _selectedId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state  = await AuthState;
+        var user   = state.User;
+        var uidStr = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var role   = user.FindFirst(ClaimTypes.Role)?.Value ?? "Viewer";
+
+        if (!int.TryParse(uidStr, out var userId)) return;
+
+        _locations  = await LocationService.GetForUserAsync(userId, role);
+        _selectedId = LocationSession.SelectedLocationID;
+
+        if (_locations.Count == 1 && !LocationSession.HasLocation)
+            ApplyLocation(_locations[0]);
+    }
+
+    private void OnLocationChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id) && id > 0)
+        {
+            var loc = _locations.FirstOrDefault(l => l.LocationID == id);
+            if (loc is not null) ApplyLocation(loc);
+        }
+        else
+        {
+            _selectedId = 0;
+            LocationSession.Clear();
+        }
+    }
+
+    private void ApplyLocation(Portal.Models.Location loc)
+    {
+        _selectedId = loc.LocationID;
+        LocationSession.Select(loc.LocationID, loc.Code, loc.Name);
+    }
+}

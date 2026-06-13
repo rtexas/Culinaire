@@ -1,0 +1,128 @@
+@page "/portal/admin/theme"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject ThemeService ThemeService
+@inject SettingsService SettingsService
+
+<PageTitle>Theme Editor — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Theme Editor</h1>
+    </div>
+
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+
+        <!-- Editor form -->
+        <div class="form-card" style="flex:1;min-width:340px;max-width:560px;">
+
+            <div class="form-section-label">Portal Identity</div>
+            <div class="form-row">
+                <label>Portal Name</label>
+                <input type="text" @bind="_t.PortalName" @bind:event="oninput" @bind:after="RefreshPreview" />
+            </div>
+            <div class="form-row">
+                <label>Tagline</label>
+                <input type="text" @bind="_t.Tagline" @bind:event="oninput" @bind:after="RefreshPreview" />
+            </div>
+
+            <div class="form-section-label" style="margin-top:20px;">Colors</div>
+
+            <ColorPicker Label="Background"  @bind-HexValue="_t.BackgroundColor" OnChanged="RefreshPreview" />
+            <ColorPicker Label="Text"        @bind-HexValue="_t.TextColor"       OnChanged="RefreshPreview" />
+            <ColorPicker Label="Primary"     @bind-HexValue="_t.PrimaryColor"    OnChanged="RefreshPreview" />
+            <ColorPicker Label="Accent"      @bind-HexValue="_t.AccentColor"     OnChanged="RefreshPreview" />
+            <ColorPicker Label="Sidebar BG"  @bind-HexValue="_t.SidebarBg"       OnChanged="RefreshPreview" />
+            <ColorPicker Label="Sidebar Text"@bind-HexValue="_t.SidebarText"     OnChanged="RefreshPreview" />
+            <ColorPicker Label="Header BG"   @bind-HexValue="_t.HeaderBg"        OnChanged="RefreshPreview" />
+            <ColorPicker Label="Header Text" @bind-HexValue="_t.HeaderText"      OnChanged="RefreshPreview" />
+
+            @if (!string.IsNullOrEmpty(_successMsg))
+            {
+                <div class="alert alert-success" style="margin-top:12px;">@_successMsg</div>
+            }
+
+            <div class="form-actions" style="margin-top:20px;">
+                <button class="btn-primary" @onclick="SaveAsync">Save & Apply</button>
+                <button class="btn-secondary" @onclick="ResetDefaults">Reset Defaults</button>
+            </div>
+        </div>
+
+        <!-- Live preview panel -->
+        <div class="theme-preview-panel" style="flex:1;min-width:280px;">
+            <div class="form-section-label">Live Preview</div>
+            <div class="theme-preview-shell"
+                 style="--prev-header-bg:@_t.HeaderBg;
+                        --prev-header-txt:@_t.HeaderText;
+                        --prev-sidebar-bg:@_t.SidebarBg;
+                        --prev-sidebar-txt:@_t.SidebarText;
+                        --prev-bg:@_t.BackgroundColor;
+                        --prev-txt:@_t.TextColor;
+                        --prev-primary:@_t.PrimaryColor;">
+                <div class="prev-header">
+                    <span class="prev-portal-name">@_t.PortalName</span>
+                </div>
+                <div style="display:flex;height:160px;">
+                    <div class="prev-sidebar">
+                        <div class="prev-nav-item active-prev">📊 EOD Sales</div>
+                        <div class="prev-nav-item">💰 Payables</div>
+                        <div class="prev-nav-item">🧾 Checks</div>
+                    </div>
+                    <div class="prev-content">
+                        <div class="prev-heading" style="color:var(--prev-primary);">Dashboard</div>
+                        <div class="prev-card" style="background:var(--prev-primary);"></div>
+                        <div class="prev-card" style="background:var(--prev-primary);opacity:.6;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private Portal.Models.PortalTheme _t        = new();
+    private string                    _successMsg = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var c = ThemeService.Current;
+        _t = new Portal.Models.PortalTheme
+        {
+            PortalName = c.PortalName, Tagline = c.Tagline, LogoPath = c.LogoPath,
+            BackgroundColor = c.BackgroundColor, TextColor = c.TextColor,
+            PrimaryColor = c.PrimaryColor, AccentColor = c.AccentColor,
+            SidebarBg = c.SidebarBg, SidebarText = c.SidebarText,
+            HeaderBg = c.HeaderBg, HeaderText = c.HeaderText,
+        };
+    }
+
+    private void RefreshPreview() => StateHasChanged();
+
+    private async Task SaveAsync()
+    {
+        _successMsg = string.Empty;
+        var saves = new Dictionary<string, string>
+        {
+            ["Portal.Name"]           = _t.PortalName,
+            ["Portal.Tagline"]        = _t.Tagline,
+            ["Theme.BackgroundColor"] = _t.BackgroundColor,
+            ["Theme.TextColor"]       = _t.TextColor,
+            ["Theme.PrimaryColor"]    = _t.PrimaryColor,
+            ["Theme.AccentColor"]     = _t.AccentColor,
+            ["Theme.SidebarBg"]       = _t.SidebarBg,
+            ["Theme.SidebarText"]     = _t.SidebarText,
+            ["Theme.HeaderBg"]        = _t.HeaderBg,
+            ["Theme.HeaderText"]      = _t.HeaderText,
+        };
+        foreach (var kv in saves)
+            await SettingsService.UpdateAsync(kv.Key, kv.Value);
+
+        ThemeService.Update(_t);
+        _successMsg = "Theme saved and applied.";
+    }
+
+    private void ResetDefaults()
+    {
+        _t = new Portal.Models.PortalTheme();
+        StateHasChanged();
+    }
+}
