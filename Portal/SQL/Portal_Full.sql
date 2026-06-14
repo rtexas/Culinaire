@@ -1,5 +1,5 @@
 -- =============================================================================
--- Culinaire Portal — Complete Database Setup Script
+-- Culinaire Portal -- Complete Database Setup Script
 -- Target: SQL Server on venus-01
 -- Creates the [Culinaire] database from scratch and builds all tables,
 -- constraints, and seed data in a single idempotent run.
@@ -25,7 +25,7 @@ GO
 -- CORE TABLES
 -- =============================================================================
 
--- ── Settings ──────────────────────────────────────────────────────────────────
+-- Settings
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Settings]'))
 BEGIN
     CREATE TABLE [dbo].[Settings]
@@ -40,7 +40,7 @@ BEGIN
 END
 GO
 
--- ── Logging ───────────────────────────────────────────────────────────────────
+-- Logging
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Logging]'))
 BEGIN
     CREATE TABLE [dbo].[Logging]
@@ -55,28 +55,28 @@ BEGIN
 END
 GO
 
--- ── Users ─────────────────────────────────────────────────────────────────────
+-- Users
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Users]'))
 BEGIN
     CREATE TABLE [dbo].[Users]
     (
-        [UserID]       INT           NOT NULL IDENTITY(1,1),
-        [Username]     NVARCHAR(100) NOT NULL,
-        [PasswordHash] NVARCHAR(256) NOT NULL,
-        [PasswordSalt] NVARCHAR(128) NOT NULL,
-        [FullName]     NVARCHAR(200) NOT NULL,
-        [Email]        NVARCHAR(200) NULL,
-        [RoleType]     NVARCHAR(20)  NOT NULL CONSTRAINT [DF_Users_RoleType]  DEFAULT ('User'),
-        [IsActive]     BIT           NOT NULL CONSTRAINT [DF_Users_IsActive]  DEFAULT (1),
-        [CreatedAt]    DATETIME      NOT NULL CONSTRAINT [DF_Users_CreatedAt] DEFAULT (GETDATE()),
-        [LastLoginAt]  DATETIME      NULL,
-        [Address1]     NVARCHAR(200) NULL,
-        [Address2]     NVARCHAR(200) NULL,
-        [Address3]     NVARCHAR(200) NULL,
-        [City]         NVARCHAR(100) NULL,
-        [StateRegionID] INT          NULL,
-        [PostalCode]   NVARCHAR(20)  NULL,
-        [CountryID]    INT           NULL,
+        [UserID]        INT           NOT NULL IDENTITY(1,1),
+        [Username]      NVARCHAR(100) NOT NULL,
+        [PasswordHash]  NVARCHAR(256) NOT NULL,
+        [PasswordSalt]  NVARCHAR(128) NOT NULL,
+        [FullName]      NVARCHAR(200) NOT NULL,
+        [Email]         NVARCHAR(200) NULL,
+        [RoleType]      NVARCHAR(20)  NOT NULL CONSTRAINT [DF_Users_RoleType]  DEFAULT ('User'),
+        [IsActive]      BIT           NOT NULL CONSTRAINT [DF_Users_IsActive]  DEFAULT (1),
+        [CreatedAt]     DATETIME      NOT NULL CONSTRAINT [DF_Users_CreatedAt] DEFAULT (GETDATE()),
+        [LastLoginAt]   DATETIME      NULL,
+        [Address1]      NVARCHAR(200) NULL,
+        [Address2]      NVARCHAR(200) NULL,
+        [Address3]      NVARCHAR(200) NULL,
+        [City]          NVARCHAR(100) NULL,
+        [StateRegionID] INT           NULL,
+        [PostalCode]    NVARCHAR(20)  NULL,
+        [CountryID]     INT           NULL,
         CONSTRAINT [PK_Users]          PRIMARY KEY CLUSTERED ([UserID] ASC),
         CONSTRAINT [UQ_Users_Username] UNIQUE ([Username]),
         CONSTRAINT [CK_Users_RoleType] CHECK ([RoleType] IN ('Administrator','User','Viewer'))
@@ -85,7 +85,7 @@ BEGIN
 END
 GO
 
--- ── Modules ───────────────────────────────────────────────────────────────────
+-- Modules
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Modules]'))
 BEGIN
     CREATE TABLE [dbo].[Modules]
@@ -103,7 +103,7 @@ BEGIN
 END
 GO
 
--- ── UserModulePermissions ─────────────────────────────────────────────────────
+-- UserModulePermissions
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[UserModulePermissions]'))
 BEGIN
     CREATE TABLE [dbo].[UserModulePermissions]
@@ -113,10 +113,10 @@ BEGIN
         [ModuleID]        INT          NOT NULL,
         [PermissionLevel] NVARCHAR(20) NOT NULL CONSTRAINT [DF_UMP_Level] DEFAULT ('None'),
         CONSTRAINT [PK_UserModulePermissions] PRIMARY KEY CLUSTERED ([PermissionID] ASC),
-        CONSTRAINT [FK_UMP_User]   FOREIGN KEY ([UserID])   REFERENCES [dbo].[Users]([UserID])   ON DELETE CASCADE,
-        CONSTRAINT [FK_UMP_Module] FOREIGN KEY ([ModuleID]) REFERENCES [dbo].[Modules]([ModuleID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_UMP_User]       FOREIGN KEY ([UserID])   REFERENCES [dbo].[Users]([UserID])     ON DELETE CASCADE,
+        CONSTRAINT [FK_UMP_Module]     FOREIGN KEY ([ModuleID]) REFERENCES [dbo].[Modules]([ModuleID]) ON DELETE CASCADE,
         CONSTRAINT [UQ_UMP_UserModule] UNIQUE ([UserID],[ModuleID]),
-        CONSTRAINT [CK_UMP_Level] CHECK ([PermissionLevel] IN ('None','Read','ReadWrite','EditAndVoid'))
+        CONSTRAINT [CK_UMP_Level]      CHECK ([PermissionLevel] IN ('None','Read','ReadWrite','EditAndVoid'))
     );
     PRINT 'Table [dbo].[UserModulePermissions] created.';
 END
@@ -126,7 +126,7 @@ GO
 -- CHART OF ACCOUNTS TABLES
 -- =============================================================================
 
--- ── AccountCategories ─────────────────────────────────────────────────────────
+-- AccountCategories
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[AccountCategories]'))
 BEGIN
     CREATE TABLE [dbo].[AccountCategories]
@@ -143,7 +143,7 @@ BEGIN
 END
 GO
 
--- ── AccountTypes ──────────────────────────────────────────────────────────────
+-- AccountTypes
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[AccountTypes]'))
 BEGIN
     CREATE TABLE [dbo].[AccountTypes]
@@ -160,7 +160,7 @@ BEGIN
 END
 GO
 
--- ── ChartOfAccounts ───────────────────────────────────────────────────────────
+-- ChartOfAccounts
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[ChartOfAccounts]'))
 BEGIN
     CREATE TABLE [dbo].[ChartOfAccounts]
@@ -170,8 +170,7 @@ BEGIN
         [AccountDescription] NVARCHAR(500) NULL,
         [CategoryID]         INT           NULL,
         [TypeID]             INT           NULL,
-        [IsActive]           BIT           NOT NULL CONSTRAINT [DF_CoA_IsActive]   DEFAULT (1),
-        -- Segment-based G/L account string (used by EOD Sales and account filtering)
+        [IsActive]           BIT           NOT NULL CONSTRAINT [DF_CoA_IsActive]  DEFAULT (1),
         [FullAccountString]  NVARCHAR(200) NULL,
         [Seg1Value]          NVARCHAR(50)  NULL,
         [Seg2Value]          NVARCHAR(50)  NULL,
@@ -179,7 +178,7 @@ BEGIN
         [Seg4Value]          NVARCHAR(50)  NULL,
         [Seg5Value]          NVARCHAR(50)  NULL,
         [Seg6Value]          NVARCHAR(50)  NULL,
-        [CreatedAt]          DATETIME2(0)  NOT NULL CONSTRAINT [DF_CoA_CreatedAt]  DEFAULT (GETDATE()),
+        [CreatedAt]          DATETIME2(0)  NOT NULL CONSTRAINT [DF_CoA_CreatedAt] DEFAULT (GETDATE()),
         CONSTRAINT [PK_ChartOfAccounts]      PRIMARY KEY CLUSTERED ([AccountID] ASC),
         CONSTRAINT [UQ_ChartOfAccounts_Name] UNIQUE ([AccountName]),
         CONSTRAINT [FK_CoA_Category] FOREIGN KEY ([CategoryID]) REFERENCES [dbo].[AccountCategories]([CategoryID]) ON DELETE SET NULL,
@@ -193,7 +192,7 @@ GO
 -- ADDRESS / REFERENCE TABLES
 -- =============================================================================
 
--- ── StatesRegions ─────────────────────────────────────────────────────────────
+-- StatesRegions
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[StatesRegions]'))
 BEGIN
     CREATE TABLE [dbo].[StatesRegions]
@@ -211,7 +210,7 @@ BEGIN
 END
 GO
 
--- ── Countries ─────────────────────────────────────────────────────────────────
+-- Countries
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Countries]'))
 BEGIN
     CREATE TABLE [dbo].[Countries]
@@ -229,7 +228,7 @@ BEGIN
 END
 GO
 
--- ── Users address FKs (added after StatesRegions & Countries exist) ──────────
+-- Users address FKs (added after StatesRegions & Countries exist)
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_Users_State')
     ALTER TABLE [dbo].[Users]
         ADD CONSTRAINT [FK_Users_State] FOREIGN KEY ([StateRegionID])
@@ -245,7 +244,7 @@ GO
 -- VENDOR TABLES
 -- =============================================================================
 
--- ── Vendors ───────────────────────────────────────────────────────────────────
+-- Vendors
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Vendors]'))
 BEGIN
     CREATE TABLE [dbo].[Vendors]
@@ -278,7 +277,7 @@ GO
 -- SEED DATA
 -- =============================================================================
 
--- ── Settings ──────────────────────────────────────────────────────────────────
+-- Settings
 IF NOT EXISTS (SELECT 1 FROM [dbo].[Settings] WHERE [Name] = 'Logging.MinLevel')
     INSERT INTO [dbo].[Settings] ([Name],[Value],[IsEnabled]) VALUES ('Logging.MinLevel','Information',1);
 
@@ -325,7 +324,7 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[Settings] WHERE [Name] = 'CoaAccountDelimite
     INSERT INTO [dbo].[Settings] ([Name],[Value],[IsEnabled]) VALUES ('CoaAccountDelimiter','-',1);
 GO
 
--- ── Modules ───────────────────────────────────────────────────────────────────
+-- Modules
 IF NOT EXISTS (SELECT 1 FROM [dbo].[Modules] WHERE [ModuleName] = 'EodSales')
     INSERT INTO [dbo].[Modules] ([ModuleName],[DisplayName],[RouteUrl],[IconClass],[SortOrder],[IsActive])
     VALUES ('EodSales','EOD Sales','/portal/eod-sales','icon-chart',1,1);
@@ -343,7 +342,10 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[Modules] WHERE [ModuleName] = 'Payroll')
     VALUES ('Payroll','Payroll','/portal/payroll','icon-payroll',4,1);
 GO
 
--- ── Items ─────────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- ITEMS TABLE
+-- =============================================================================
+
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Items]'))
 BEGIN
     CREATE TABLE [dbo].[Items]
@@ -353,16 +355,19 @@ BEGIN
         [ItemName]        NVARCHAR(200)  NOT NULL,
         [ItemDescription] NVARCHAR(500)  NULL,
         [TypicalPrice]    DECIMAL(18,4)  NULL,
-        [IsActive]        BIT            NOT NULL CONSTRAINT [DF_Items_IsActive]    DEFAULT (1),
-        [CreatedAt]       DATETIME       NOT NULL CONSTRAINT [DF_Items_CreatedAt]   DEFAULT (GETDATE()),
-        CONSTRAINT [PK_Items]       PRIMARY KEY CLUSTERED ([ItemID] ASC),
-        CONSTRAINT [UQ_Items_Code]  UNIQUE ([ItemCode])
+        [IsActive]        BIT            NOT NULL CONSTRAINT [DF_Items_IsActive]  DEFAULT (1),
+        [CreatedAt]       DATETIME       NOT NULL CONSTRAINT [DF_Items_CreatedAt] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_Items]      PRIMARY KEY CLUSTERED ([ItemID] ASC),
+        CONSTRAINT [UQ_Items_Code] UNIQUE ([ItemCode])
     );
     PRINT 'Table [dbo].[Items] created.';
 END
 GO
 
--- ── CoaSegments ───────────────────────────────────────────────────────────────
+-- =============================================================================
+-- COA SEGMENTS TABLE
+-- =============================================================================
+
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[CoaSegments]'))
 BEGIN
     CREATE TABLE [dbo].[CoaSegments]
@@ -375,16 +380,28 @@ BEGIN
 END
 GO
 
--- ── CoaSegments seed — COA structure: Dept (1) — Location (2) — Natural Account (3) ──
+-- CoaSegments seed -- COA structure: Dept (1) - Location (2) - Natural Account (3)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[CoaSegments] WHERE [SegmentNumber] = 1)
     INSERT INTO [dbo].[CoaSegments] ([SegmentNumber],[Description]) VALUES (1, 'Department');
+ELSE
+    UPDATE [dbo].[CoaSegments] SET [Description] = 'Department' WHERE [SegmentNumber] = 1;
+
 IF NOT EXISTS (SELECT 1 FROM [dbo].[CoaSegments] WHERE [SegmentNumber] = 2)
     INSERT INTO [dbo].[CoaSegments] ([SegmentNumber],[Description]) VALUES (2, 'Location');
+ELSE
+    UPDATE [dbo].[CoaSegments] SET [Description] = 'Location' WHERE [SegmentNumber] = 2;
+
 IF NOT EXISTS (SELECT 1 FROM [dbo].[CoaSegments] WHERE [SegmentNumber] = 3)
     INSERT INTO [dbo].[CoaSegments] ([SegmentNumber],[Description]) VALUES (3, 'Natural Account');
+ELSE
+    UPDATE [dbo].[CoaSegments] SET [Description] = 'Natural Account' WHERE [SegmentNumber] = 3;
 GO
 
--- ── Locations ─────────────────────────────────────────────────────────────────
+-- =============================================================================
+-- LOCATION TABLES
+-- =============================================================================
+
+-- Locations
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Locations]'))
 BEGIN
     CREATE TABLE [dbo].[Locations]
@@ -393,7 +410,7 @@ BEGIN
         [Code]          NVARCHAR(20)   NOT NULL,
         [Name]          NVARCHAR(100)  NOT NULL,
         [Description]   NVARCHAR(500)  NULL,
-        [SegmentNumber] INT            NOT NULL CONSTRAINT [DF_Locations_SegmentNumber] DEFAULT(0),
+        [SegmentNumber] INT            NOT NULL CONSTRAINT [DF_Locations_SegmentNumber] DEFAULT (0),
         [Address1]      NVARCHAR(100)  NULL,
         [Address2]      NVARCHAR(100)  NULL,
         [City]          NVARCHAR(100)  NULL,
@@ -401,14 +418,14 @@ BEGIN
         [Zip]           NVARCHAR(20)   NULL,
         [IsActive]      BIT            NOT NULL CONSTRAINT [DF_Locations_IsActive]      DEFAULT (1),
         [CreatedAt]     DATETIME2(0)   NOT NULL CONSTRAINT [DF_Locations_CreatedAt]     DEFAULT (GETDATE()),
-        CONSTRAINT [PK_Locations]       PRIMARY KEY CLUSTERED ([LocationID] ASC),
-        CONSTRAINT [UQ_Locations_Code]  UNIQUE ([Code])
+        CONSTRAINT [PK_Locations]      PRIMARY KEY CLUSTERED ([LocationID] ASC),
+        CONSTRAINT [UQ_Locations_Code] UNIQUE ([Code])
     );
     PRINT 'Table [dbo].[Locations] created.';
 END
 GO
 
--- ── UserLocations ─────────────────────────────────────────────────────────────
+-- UserLocations
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[UserLocations]'))
 BEGIN
     CREATE TABLE [dbo].[UserLocations]
@@ -417,12 +434,10 @@ BEGIN
         [UserID]         INT          NOT NULL,
         [LocationID]     INT          NOT NULL,
         [CreatedAt]      DATETIME2(0) NOT NULL CONSTRAINT [DF_UserLocations_CreatedAt] DEFAULT (GETDATE()),
-        CONSTRAINT [PK_UserLocations]   PRIMARY KEY CLUSTERED ([UserLocationID] ASC),
-        CONSTRAINT [UQ_UserLocations]   UNIQUE ([UserID],[LocationID]),
-        CONSTRAINT [FK_UserLoc_User]
-            FOREIGN KEY ([UserID])     REFERENCES [dbo].[Users]([UserID])     ON DELETE CASCADE,
-        CONSTRAINT [FK_UserLoc_Location]
-            FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID]) ON DELETE CASCADE
+        CONSTRAINT [PK_UserLocations]    PRIMARY KEY CLUSTERED ([UserLocationID] ASC),
+        CONSTRAINT [UQ_UserLocations]    UNIQUE ([UserID],[LocationID]),
+        CONSTRAINT [FK_UserLoc_User]     FOREIGN KEY ([UserID])     REFERENCES [dbo].[Users]([UserID])         ON DELETE CASCADE,
+        CONSTRAINT [FK_UserLoc_Location] FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID]) ON DELETE CASCADE
     );
     CREATE INDEX [IX_UserLocations_UserID]     ON [dbo].[UserLocations]([UserID]);
     CREATE INDEX [IX_UserLocations_LocationID] ON [dbo].[UserLocations]([LocationID]);
@@ -430,40 +445,11 @@ BEGIN
 END
 GO
 
--- ── EodRows ───────────────────────────────────────────────────────────────────
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodRows]'))
-BEGIN
-    CREATE TABLE [dbo].[EodRows] (
-        [RowID]       INT           NOT NULL IDENTITY(1,1),
-        [Name]        NVARCHAR(200) NOT NULL,
-        [Description] NVARCHAR(500) NULL,
-        [SectionID]   INT           NOT NULL CONSTRAINT [DF_EodRows_SectionID] DEFAULT (0),
-        [CreatedAt]   DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodRows_CreatedAt]  DEFAULT (GETDATE()),
-        CONSTRAINT [PK_EodRows]      PRIMARY KEY CLUSTERED ([RowID] ASC),
-        CONSTRAINT [UQ_EodRows_Name] UNIQUE ([Name])
-    );
-    PRINT 'Table [dbo].[EodRows] created.';
-END
-GO
+-- =============================================================================
+-- EOD SALES TABLES
+-- =============================================================================
 
--- ── EodColumns ────────────────────────────────────────────────────────────────
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodColumns]'))
-BEGIN
-    CREATE TABLE [dbo].[EodColumns] (
-        [ColumnID]         INT           NOT NULL IDENTITY(1,1),
-        [Name]             NVARCHAR(200) NOT NULL,
-        [Description]      NVARCHAR(500) NULL,
-        [CoaSegmentNumber] INT           NOT NULL CONSTRAINT [DF_EodColumns_CoaSeg]    DEFAULT (0),
-        [SegmentValue]     NVARCHAR(50)  NULL,
-        [CreatedAt]        DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodColumns_CreatedAt] DEFAULT (GETDATE()),
-        CONSTRAINT [PK_EodColumns]      PRIMARY KEY CLUSTERED ([ColumnID] ASC),
-        CONSTRAINT [UQ_EodColumns_Name] UNIQUE ([Name])
-    );
-    PRINT 'Table [dbo].[EodColumns] created.';
-END
-GO
-
--- ── EodSections ───────────────────────────────────────────────────────────────
+-- EodSections
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSections]'))
 BEGIN
     CREATE TABLE [dbo].[EodSections] (
@@ -480,7 +466,40 @@ BEGIN
 END
 GO
 
--- ── EodSetups ─────────────────────────────────────────────────────────────────
+-- EodRows
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodRows]'))
+BEGIN
+    CREATE TABLE [dbo].[EodRows] (
+        [RowID]       INT           NOT NULL IDENTITY(1,1),
+        [Name]        NVARCHAR(200) NOT NULL,
+        [Description] NVARCHAR(500) NULL,
+        [SectionID]   INT           NOT NULL CONSTRAINT [DF_EodRows_SectionID] DEFAULT (0),
+        [CreatedAt]   DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodRows_CreatedAt]  DEFAULT (GETDATE()),
+        CONSTRAINT [PK_EodRows]      PRIMARY KEY CLUSTERED ([RowID] ASC),
+        CONSTRAINT [UQ_EodRows_Name] UNIQUE ([Name])
+    );
+    PRINT 'Table [dbo].[EodRows] created.';
+END
+GO
+
+-- EodColumns
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodColumns]'))
+BEGIN
+    CREATE TABLE [dbo].[EodColumns] (
+        [ColumnID]         INT           NOT NULL IDENTITY(1,1),
+        [Name]             NVARCHAR(200) NOT NULL,
+        [Description]      NVARCHAR(500) NULL,
+        [CoaSegmentNumber] INT           NOT NULL CONSTRAINT [DF_EodColumns_CoaSeg]    DEFAULT (0),
+        [SegmentValue]     NVARCHAR(50)  NULL,
+        [CreatedAt]        DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodColumns_CreatedAt] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_EodColumns]      PRIMARY KEY CLUSTERED ([ColumnID] ASC),
+        CONSTRAINT [UQ_EodColumns_Name] UNIQUE ([Name])
+    );
+    PRINT 'Table [dbo].[EodColumns] created.';
+END
+GO
+
+-- EodSetups
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSetups]'))
 BEGIN
     CREATE TABLE [dbo].[EodSetups] (
@@ -497,7 +516,7 @@ BEGIN
 END
 GO
 
--- ── EodSetupColumns ───────────────────────────────────────────────────────────
+-- EodSetupColumns
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSetupColumns]'))
 BEGIN
     CREATE TABLE [dbo].[EodSetupColumns] (
@@ -512,7 +531,7 @@ BEGIN
 END
 GO
 
--- ── EodSetupRows ──────────────────────────────────────────────────────────────
+-- EodSetupRows
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSetupRows]'))
 BEGIN
     CREATE TABLE [dbo].[EodSetupRows] (
@@ -527,7 +546,7 @@ BEGIN
 END
 GO
 
--- ── EodSetupCells ─────────────────────────────────────────────────────────────
+-- EodSetupCells
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSetupCells]'))
 BEGIN
     CREATE TABLE [dbo].[EodSetupCells] (
@@ -543,7 +562,7 @@ BEGIN
 END
 GO
 
--- ── EodSalesEntries ───────────────────────────────────────────────────────────
+-- EodSalesEntries
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSalesEntries]'))
 BEGIN
     CREATE TABLE [dbo].[EodSalesEntries] (
@@ -564,7 +583,7 @@ BEGIN
 END
 GO
 
--- ── EodSalesValues ────────────────────────────────────────────────────────────
+-- EodSalesValues
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSalesValues]'))
 BEGIN
     CREATE TABLE [dbo].[EodSalesValues] (
@@ -580,7 +599,11 @@ BEGIN
 END
 GO
 
--- ── ShippingMethods ───────────────────────────────────────────────────────────
+-- =============================================================================
+-- PAYABLES TABLES
+-- =============================================================================
+
+-- ShippingMethods
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[ShippingMethods]'))
 BEGIN
     CREATE TABLE [dbo].[ShippingMethods]
@@ -596,7 +619,7 @@ BEGIN
 END
 GO
 
--- ── PayableHeaders ────────────────────────────────────────────────────────────
+-- PayableHeaders
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayableHeaders]'))
 BEGIN
     CREATE TABLE [dbo].[PayableHeaders]
@@ -614,19 +637,16 @@ BEGIN
         [Status]           NVARCHAR(20)   NOT NULL CONSTRAINT [DF_PayHdr_Status]     DEFAULT ('Saved'),
         [CreatedAt]        DATETIME       NOT NULL CONSTRAINT [DF_PayHdr_CreatedAt]  DEFAULT (GETDATE()),
         [UpdatedAt]        DATETIME       NOT NULL CONSTRAINT [DF_PayHdr_UpdatedAt]  DEFAULT (GETDATE()),
-        CONSTRAINT [PK_PayableHeaders] PRIMARY KEY CLUSTERED ([PayableID] ASC),
-        CONSTRAINT [FK_PayHdr_Location] FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID]),
-        CONSTRAINT [FK_PayHdr_Vendor]
-            FOREIGN KEY ([VendorID]) REFERENCES [dbo].[Vendors]([VendorID]),
-        CONSTRAINT [FK_PayHdr_ShippingMethod]
-            FOREIGN KEY ([ShippingMethodID]) REFERENCES [dbo].[ShippingMethods]([ShippingMethodID])
-            ON DELETE SET NULL
+        CONSTRAINT [PK_PayableHeaders]        PRIMARY KEY CLUSTERED ([PayableID] ASC),
+        CONSTRAINT [FK_PayHdr_Location]       FOREIGN KEY ([LocationID])       REFERENCES [dbo].[Locations]([LocationID]),
+        CONSTRAINT [FK_PayHdr_Vendor]         FOREIGN KEY ([VendorID])         REFERENCES [dbo].[Vendors]([VendorID]),
+        CONSTRAINT [FK_PayHdr_ShippingMethod] FOREIGN KEY ([ShippingMethodID]) REFERENCES [dbo].[ShippingMethods]([ShippingMethodID]) ON DELETE SET NULL
     );
     PRINT 'Table [dbo].[PayableHeaders] created.';
 END
 GO
 
--- ── PayableLineItems ──────────────────────────────────────────────────────────
+-- PayableLineItems
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayableLineItems]'))
 BEGIN
     CREATE TABLE [dbo].[PayableLineItems]
@@ -640,12 +660,8 @@ BEGIN
         [UnitPrice]     DECIMAL(18,4)  NOT NULL CONSTRAINT [DF_PayLine_Price] DEFAULT (0),
         [ExtendedPrice] DECIMAL(18,4)  NOT NULL CONSTRAINT [DF_PayLine_Ext]   DEFAULT (0),
         CONSTRAINT [PK_PayableLineItems] PRIMARY KEY CLUSTERED ([LineItemID] ASC),
-        CONSTRAINT [FK_PayLine_Payable]
-            FOREIGN KEY ([PayableID]) REFERENCES [dbo].[PayableHeaders]([PayableID])
-            ON DELETE CASCADE,
-        CONSTRAINT [FK_PayLine_Item]
-            FOREIGN KEY ([ItemID]) REFERENCES [dbo].[Items]([ItemID])
-            ON DELETE SET NULL
+        CONSTRAINT [FK_PayLine_Payable]  FOREIGN KEY ([PayableID]) REFERENCES [dbo].[PayableHeaders]([PayableID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_PayLine_Item]     FOREIGN KEY ([ItemID])    REFERENCES [dbo].[Items]([ItemID])             ON DELETE SET NULL
     );
     CREATE INDEX [IX_PayableLineItems_PayableID] ON [dbo].[PayableLineItems]([PayableID]);
     PRINT 'Table [dbo].[PayableLineItems] created.';
@@ -656,50 +672,50 @@ GO
 -- CHECK TABLES
 -- =============================================================================
 
--- ── CheckSetupVendors ─────────────────────────────────────────────────────────
+-- CheckSetupVendors
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[CheckSetupVendors]'))
 BEGIN
     CREATE TABLE [dbo].[CheckSetupVendors] (
         [CheckSetupVendorID] INT NOT NULL IDENTITY(1,1),
         [LocationID]         INT NOT NULL,
         [VendorID]           INT NOT NULL,
-        [IsActive]           BIT NOT NULL CONSTRAINT [DF_CSV_Active] DEFAULT(1),
-        CONSTRAINT [PK_CheckSetupVendors] PRIMARY KEY([CheckSetupVendorID]),
-        CONSTRAINT [UQ_CheckSetupVendors] UNIQUE([LocationID],[VendorID]),
-        CONSTRAINT [FK_CSV_Location] FOREIGN KEY([LocationID]) REFERENCES [dbo].[Locations]([LocationID]) ON DELETE CASCADE,
-        CONSTRAINT [FK_CSV_Vendor]   FOREIGN KEY([VendorID])   REFERENCES [dbo].[Vendors]([VendorID])   ON DELETE CASCADE
+        [IsActive]           BIT NOT NULL CONSTRAINT [DF_CSV_Active] DEFAULT (1),
+        CONSTRAINT [PK_CheckSetupVendors] PRIMARY KEY ([CheckSetupVendorID]),
+        CONSTRAINT [UQ_CheckSetupVendors] UNIQUE ([LocationID],[VendorID]),
+        CONSTRAINT [FK_CSV_Location] FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_CSV_Vendor]   FOREIGN KEY ([VendorID])   REFERENCES [dbo].[Vendors]([VendorID])    ON DELETE CASCADE
     );
     PRINT 'Table [dbo].[CheckSetupVendors] created.';
 END
 GO
 
--- ── CheckSetupAccounts ────────────────────────────────────────────────────────
+-- CheckSetupAccounts
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[CheckSetupAccounts]'))
 BEGIN
     CREATE TABLE [dbo].[CheckSetupAccounts] (
         [CheckSetupAccountID] INT NOT NULL IDENTITY(1,1),
         [LocationID]          INT NOT NULL,
         [AccountID]           INT NOT NULL,
-        [IsActive]            BIT NOT NULL CONSTRAINT [DF_CSA_Active] DEFAULT(1),
-        CONSTRAINT [PK_CheckSetupAccounts] PRIMARY KEY([CheckSetupAccountID]),
-        CONSTRAINT [UQ_CheckSetupAccounts] UNIQUE([LocationID],[AccountID]),
-        CONSTRAINT [FK_CSA_Location] FOREIGN KEY([LocationID]) REFERENCES [dbo].[Locations]([LocationID]) ON DELETE CASCADE,
-        CONSTRAINT [FK_CSA_Account]  FOREIGN KEY([AccountID])  REFERENCES [dbo].[ChartOfAccounts]([AccountID]) ON DELETE CASCADE
+        [IsActive]            BIT NOT NULL CONSTRAINT [DF_CSA_Active] DEFAULT (1),
+        CONSTRAINT [PK_CheckSetupAccounts] PRIMARY KEY ([CheckSetupAccountID]),
+        CONSTRAINT [UQ_CheckSetupAccounts] UNIQUE ([LocationID],[AccountID]),
+        CONSTRAINT [FK_CSA_Location] FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID])     ON DELETE CASCADE,
+        CONSTRAINT [FK_CSA_Account]  FOREIGN KEY ([AccountID])  REFERENCES [dbo].[ChartOfAccounts]([AccountID]) ON DELETE CASCADE
     );
     PRINT 'Table [dbo].[CheckSetupAccounts] created.';
 END
 GO
 
--- ── CheckTransactions ─────────────────────────────────────────────────────────
+-- CheckTransactions
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[CheckTransactions]'))
 BEGIN
     CREATE TABLE [dbo].[CheckTransactions] (
         [CheckTransactionID]   INT            NOT NULL IDENTITY(1,1),
         [LocationID]           INT            NOT NULL,
-        [CheckNumber]          INT            NOT NULL CONSTRAINT [DF_CT_CheckNum] DEFAULT(0),
+        [CheckNumber]          INT            NOT NULL CONSTRAINT [DF_CT_CheckNum]   DEFAULT (0),
         [TransactionDate]      DATE           NOT NULL,
         [VendorID]             INT            NULL,
-        [IsManualVendor]       BIT            NOT NULL CONSTRAINT [DF_CT_Manual]     DEFAULT(0),
+        [IsManualVendor]       BIT            NOT NULL CONSTRAINT [DF_CT_Manual]     DEFAULT (0),
         [ManualVendorName]     NVARCHAR(100)  NULL,
         [ManualVendorAddress1] NVARCHAR(100)  NULL,
         [ManualVendorAddress2] NVARCHAR(100)  NULL,
@@ -709,18 +725,18 @@ BEGIN
         [Amount]               DECIMAL(18,2)  NOT NULL,
         [Memo]                 NVARCHAR(500)  NULL,
         [ExpenseAccountID]     INT            NULL,
-        [IsSubmitted]          BIT            NOT NULL CONSTRAINT [DF_CT_Submitted]  DEFAULT(0),
+        [IsSubmitted]          BIT            NOT NULL CONSTRAINT [DF_CT_Submitted]  DEFAULT (0),
         [SubmittedAt]          DATETIME2(0)   NULL,
         [SubmittedByUserID]    INT            NULL,
-        [IsVoided]             BIT            NOT NULL CONSTRAINT [DF_CT_Voided]     DEFAULT(0),
+        [IsVoided]             BIT            NOT NULL CONSTRAINT [DF_CT_Voided]     DEFAULT (0),
         [VoidedAt]             DATETIME2(0)   NULL,
         [VoidedByUserID]       INT            NULL,
         [CreatedByUserID]      INT            NULL,
-        [CreatedAt]            DATETIME2(0)   NOT NULL CONSTRAINT [DF_CT_Created]    DEFAULT(GETDATE()),
-        CONSTRAINT [PK_CheckTransactions] PRIMARY KEY([CheckTransactionID]),
-        CONSTRAINT [FK_CT_Location] FOREIGN KEY([LocationID])       REFERENCES [dbo].[Locations]([LocationID]),
-        CONSTRAINT [FK_CT_Vendor]   FOREIGN KEY([VendorID])         REFERENCES [dbo].[Vendors]([VendorID]),
-        CONSTRAINT [FK_CT_Account]  FOREIGN KEY([ExpenseAccountID]) REFERENCES [dbo].[ChartOfAccounts]([AccountID])
+        [CreatedAt]            DATETIME2(0)   NOT NULL CONSTRAINT [DF_CT_Created]    DEFAULT (GETDATE()),
+        CONSTRAINT [PK_CheckTransactions] PRIMARY KEY ([CheckTransactionID]),
+        CONSTRAINT [FK_CT_Location] FOREIGN KEY ([LocationID])       REFERENCES [dbo].[Locations]([LocationID]),
+        CONSTRAINT [FK_CT_Vendor]   FOREIGN KEY ([VendorID])         REFERENCES [dbo].[Vendors]([VendorID]),
+        CONSTRAINT [FK_CT_Account]  FOREIGN KEY ([ExpenseAccountID]) REFERENCES [dbo].[ChartOfAccounts]([AccountID])
     );
     CREATE INDEX [IX_CT_Location] ON [dbo].[CheckTransactions]([LocationID],[TransactionDate] DESC);
     PRINT 'Table [dbo].[CheckTransactions] created.';
@@ -731,7 +747,7 @@ GO
 -- PAYROLL TABLES
 -- =============================================================================
 
--- ── JobRoles ──────────────────────────────────────────────────────────────────
+-- JobRoles
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[JobRoles]'))
 BEGIN
     CREATE TABLE [dbo].[JobRoles]
@@ -750,7 +766,7 @@ BEGIN
 END
 GO
 
--- ── Employees ─────────────────────────────────────────────────────────────────
+-- Employees
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Employees]'))
 BEGIN
     CREATE TABLE [dbo].[Employees]
@@ -768,7 +784,7 @@ BEGIN
 END
 GO
 
--- ── EmployeeLocations ─────────────────────────────────────────────────────────
+-- EmployeeLocations
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EmployeeLocations]'))
 BEGIN
     CREATE TABLE [dbo].[EmployeeLocations]
@@ -792,7 +808,7 @@ GO
 -- DEPARTMENT TABLES
 -- =============================================================================
 
--- ── Departments ───────────────────────────────────────────────────────────────
+-- Departments
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[Departments]'))
 BEGIN
     CREATE TABLE [dbo].[Departments] (
@@ -800,27 +816,27 @@ BEGIN
         [Code]         NVARCHAR(20)  NOT NULL,
         [Name]         NVARCHAR(100) NOT NULL,
         [Description]  NVARCHAR(500) NULL,
-        [IsActive]     BIT           NOT NULL CONSTRAINT [DF_Dept_Active]  DEFAULT(1),
-        [CreatedAt]    DATETIME2(0)  NOT NULL CONSTRAINT [DF_Dept_Created] DEFAULT(GETDATE()),
-        CONSTRAINT [PK_Departments]      PRIMARY KEY([DepartmentID]),
-        CONSTRAINT [UQ_Departments_Code] UNIQUE([Code])
+        [IsActive]     BIT           NOT NULL CONSTRAINT [DF_Dept_Active]  DEFAULT (1),
+        [CreatedAt]    DATETIME2(0)  NOT NULL CONSTRAINT [DF_Dept_Created] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_Departments]      PRIMARY KEY ([DepartmentID]),
+        CONSTRAINT [UQ_Departments_Code] UNIQUE ([Code])
     );
     PRINT 'Table [dbo].[Departments] created.';
 END
 GO
 
--- ── LocationDepartments ───────────────────────────────────────────────────────
+-- LocationDepartments
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[LocationDepartments]'))
 BEGIN
     CREATE TABLE [dbo].[LocationDepartments] (
         [LocationDepartmentID] INT          NOT NULL IDENTITY(1,1),
         [LocationID]           INT          NOT NULL,
         [DepartmentID]         INT          NOT NULL,
-        [CreatedAt]            DATETIME2(0) NOT NULL CONSTRAINT [DF_LocDept_Created] DEFAULT(GETDATE()),
-        CONSTRAINT [PK_LocationDepartments] PRIMARY KEY([LocationDepartmentID]),
-        CONSTRAINT [UQ_LocationDepartments] UNIQUE([LocationID],[DepartmentID]),
-        CONSTRAINT [FK_LocDept_Location]    FOREIGN KEY([LocationID])   REFERENCES [dbo].[Locations]([LocationID])    ON DELETE CASCADE,
-        CONSTRAINT [FK_LocDept_Department]  FOREIGN KEY([DepartmentID]) REFERENCES [dbo].[Departments]([DepartmentID]) ON DELETE CASCADE
+        [CreatedAt]            DATETIME2(0) NOT NULL CONSTRAINT [DF_LocDept_Created] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_LocationDepartments] PRIMARY KEY ([LocationDepartmentID]),
+        CONSTRAINT [UQ_LocationDepartments] UNIQUE ([LocationID],[DepartmentID]),
+        CONSTRAINT [FK_LocDept_Location]    FOREIGN KEY ([LocationID])   REFERENCES [dbo].[Locations]([LocationID])     ON DELETE CASCADE,
+        CONSTRAINT [FK_LocDept_Department]  FOREIGN KEY ([DepartmentID]) REFERENCES [dbo].[Departments]([DepartmentID]) ON DELETE CASCADE
     );
     CREATE INDEX [IX_LocDept_LocationID]   ON [dbo].[LocationDepartments]([LocationID]);
     CREATE INDEX [IX_LocDept_DepartmentID] ON [dbo].[LocationDepartments]([DepartmentID]);
@@ -829,27 +845,30 @@ END
 GO
 
 -- =============================================================================
--- PAYROLL BATCH SETUP
+-- PAYROLL BATCH TABLES
 -- =============================================================================
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE [name]='PayrollBatches')
+
+-- PayrollBatches
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayrollBatches]'))
 BEGIN
     CREATE TABLE [dbo].[PayrollBatches] (
-        [BatchID]            INT            NOT NULL IDENTITY(1,1),
-        [LocationID]         INT            NOT NULL,
-        [BatchNameTemplate]  NVARCHAR(500)  NOT NULL,
-        [PayPeriodLength]    NVARCHAR(20)   NOT NULL,
-        [StartDayOfWeek]     NVARCHAR(10)   NULL,
-        [IsActive]           BIT            NOT NULL DEFAULT(1),
-        [CreatedAt]          DATETIME2      NOT NULL DEFAULT(GETDATE()),
-        CONSTRAINT [PK_PayrollBatches] PRIMARY KEY ([BatchID]),
+        [BatchID]           INT            NOT NULL IDENTITY(1,1),
+        [LocationID]        INT            NOT NULL,
+        [BatchNameTemplate] NVARCHAR(500)  NOT NULL,
+        [PayPeriodLength]   NVARCHAR(20)   NOT NULL,
+        [StartDayOfWeek]    NVARCHAR(10)   NULL,
+        [IsActive]          BIT            NOT NULL CONSTRAINT [DF_PayrollBatches_IsActive]  DEFAULT (1),
+        [CreatedAt]         DATETIME2(0)   NOT NULL CONSTRAINT [DF_PayrollBatches_CreatedAt] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_PayrollBatches]           PRIMARY KEY CLUSTERED ([BatchID] ASC),
         CONSTRAINT [FK_PayrollBatches_Locations] FOREIGN KEY ([LocationID])
             REFERENCES [dbo].[Locations]([LocationID])
     );
+    PRINT 'Table [dbo].[PayrollBatches] created.';
 END
 GO
 
--- ── PayrollRuns ───────────────────────────────────────────────────────────────
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE [name]='PayrollRuns')
+-- PayrollRuns
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayrollRuns]'))
 BEGIN
     CREATE TABLE [dbo].[PayrollRuns]
     (
@@ -859,39 +878,41 @@ BEGIN
         [BatchName]      NVARCHAR(500)   NOT NULL,
         [PayPeriodStart] DATE            NOT NULL,
         [PayPeriodEnd]   DATE            NOT NULL,
-        [Status]         NVARCHAR(10)    NOT NULL DEFAULT ('Saved'),
-        [GrandTotal]     DECIMAL(18,2)   NOT NULL DEFAULT (0),
-        [CreatedAt]      DATETIME2(0)    NOT NULL DEFAULT (GETDATE()),
+        [Status]         NVARCHAR(10)    NOT NULL CONSTRAINT [DF_PayrollRuns_Status]     DEFAULT ('Saved'),
+        [GrandTotal]     DECIMAL(18,2)   NOT NULL CONSTRAINT [DF_PayrollRuns_GrandTotal] DEFAULT (0),
+        [CreatedAt]      DATETIME2(0)    NOT NULL CONSTRAINT [DF_PayrollRuns_CreatedAt]  DEFAULT (GETDATE()),
         [SubmittedAt]    DATETIME2(0)    NULL,
         [VoidedAt]       DATETIME2(0)    NULL,
-        CONSTRAINT [PK_PayrollRuns]           PRIMARY KEY ([RunID]),
-        CONSTRAINT [FK_PayrollRuns_Batches]   FOREIGN KEY ([BatchID])   REFERENCES [dbo].[PayrollBatches]([BatchID]),
+        CONSTRAINT [PK_PayrollRuns]           PRIMARY KEY CLUSTERED ([RunID] ASC),
+        CONSTRAINT [FK_PayrollRuns_Batches]   FOREIGN KEY ([BatchID])    REFERENCES [dbo].[PayrollBatches]([BatchID]),
         CONSTRAINT [FK_PayrollRuns_Locations] FOREIGN KEY ([LocationID]) REFERENCES [dbo].[Locations]([LocationID]),
         CONSTRAINT [CK_PayrollRuns_Status]    CHECK ([Status] IN ('Saved','Submitted','Voided'))
     );
+    PRINT 'Table [dbo].[PayrollRuns] created.';
 END
 GO
 
--- ── PayrollRunLines ───────────────────────────────────────────────────────────
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE [name]='PayrollRunLines')
+-- PayrollRunLines
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayrollRunLines]'))
 BEGIN
     CREATE TABLE [dbo].[PayrollRunLines]
     (
-        [LineID]       INT             NOT NULL IDENTITY(1,1),
-        [RunID]        INT             NOT NULL,
-        [EmployeeID]   INT             NOT NULL,
-        [JobRoleID]    INT             NOT NULL,
-        [PayType]      NVARCHAR(10)    NOT NULL,
-        [Quantity]     DECIMAL(10,2)   NOT NULL DEFAULT (1),
-        [PayRate]      DECIMAL(18,4)   NOT NULL DEFAULT (0),
-        [TotalAmount]  DECIMAL(18,2)   NOT NULL DEFAULT (0),
-        [SortOrder]    INT             NOT NULL DEFAULT (0),
-        CONSTRAINT [PK_PayrollRunLines]          PRIMARY KEY ([LineID]),
-        CONSTRAINT [FK_PayrollRunLines_Run]      FOREIGN KEY ([RunID])       REFERENCES [dbo].[PayrollRuns]([RunID]),
-        CONSTRAINT [FK_PayrollRunLines_Employee] FOREIGN KEY ([EmployeeID])  REFERENCES [dbo].[Employees]([EmployeeID]),
-        CONSTRAINT [FK_PayrollRunLines_JobRole]  FOREIGN KEY ([JobRoleID])   REFERENCES [dbo].[JobRoles]([JobRoleID]),
+        [LineID]      INT             NOT NULL IDENTITY(1,1),
+        [RunID]       INT             NOT NULL,
+        [EmployeeID]  INT             NOT NULL,
+        [JobRoleID]   INT             NOT NULL,
+        [PayType]     NVARCHAR(10)    NOT NULL,
+        [Quantity]    DECIMAL(10,2)   NOT NULL CONSTRAINT [DF_PayrollRunLines_Quantity]  DEFAULT (1),
+        [PayRate]     DECIMAL(18,4)   NOT NULL CONSTRAINT [DF_PayrollRunLines_PayRate]   DEFAULT (0),
+        [TotalAmount] DECIMAL(18,2)   NOT NULL CONSTRAINT [DF_PayrollRunLines_Total]     DEFAULT (0),
+        [SortOrder]   INT             NOT NULL CONSTRAINT [DF_PayrollRunLines_SortOrder] DEFAULT (0),
+        CONSTRAINT [PK_PayrollRunLines]          PRIMARY KEY CLUSTERED ([LineID] ASC),
+        CONSTRAINT [FK_PayrollRunLines_Run]      FOREIGN KEY ([RunID])      REFERENCES [dbo].[PayrollRuns]([RunID]),
+        CONSTRAINT [FK_PayrollRunLines_Employee] FOREIGN KEY ([EmployeeID]) REFERENCES [dbo].[Employees]([EmployeeID]),
+        CONSTRAINT [FK_PayrollRunLines_JobRole]  FOREIGN KEY ([JobRoleID])  REFERENCES [dbo].[JobRoles]([JobRoleID]),
         CONSTRAINT [CK_PayrollRunLines_PayType]  CHECK ([PayType] IN ('Hourly','Exempt'))
     );
+    PRINT 'Table [dbo].[PayrollRunLines] created.';
 END
 GO
 
