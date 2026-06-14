@@ -1,61 +1,457 @@
 @page "/portal/checks"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using System.Security.Claims
-@inject PermissionService      PermissionService
 @inject LocationSessionService LocationSession
+@inject LocationService        LocationSvc
+@inject CheckService           CheckSvc
+@inject CheckSetupService      SetupSvc
+@inject VendorService          VendorSvc
+@inject PermissionService      PermissionSvc
 @inject NavigationManager      Nav
 
 <PageTitle>Checks — Culinaire Portal</PageTitle>
 
 @if (!LocationSession.HasLocation)
 {
-    <div class="no-location-guard">
-        <p>No location selected.</p>
-        <a class="btn-secondary" href="/portal">Return to Dashboard</a>
+    <div class="portal-page">
+        <div class="alert alert-info">
+            No location selected. <a href="/portal">Return to Dashboard</a> and select a location first.
+        </div>
     </div>
 }
 else if (_level == "None")
 {
-    <div class="error-page"><p>You do not have access to Checks.</p></div>
+    <div class="portal-page"><div class="alert alert-error">You do not have access to Checks.</div></div>
 }
 else
 {
-    <div class="module-page">
+    <div class="portal-page">
         <div class="module-header">
             <h1 class="page-heading">Checks</h1>
-            @if (_level == "ReadWrite")
-            {
-                <button class="btn-primary" disabled>+ New Check</button>
-            }
+            <span style="font-size:13px;color:var(--color-text-muted);">
+                @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+            </span>
         </div>
 
-        <div class="location-banner">
-            📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
-        </div>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error" style="max-width:750px;margin-bottom:16px;">@_error</div>
+        }
+        @if (!string.IsNullOrEmpty(_successMsg))
+        {
+            <div class="alert alert-success" style="max-width:750px;margin-bottom:16px;">@_successMsg</div>
+        }
 
-        <div class="module-placeholder">
-            <div class="placeholder-icon">🧾</div>
-            <h2>Checks Module</h2>
-            <p>Check management and reconciliation will be displayed here.</p>
-            @if (_level == "Read")
+        @if (!_showForm)
+        {
+            <!-- ── Landing ───────────────────────────────────────────────────── -->
+            @if (PermissionService.CanWrite(_level))
             {
-                <span class="access-badge read-only">Read Only</span>
+                <div style="margin-bottom:24px;">
+                    <button class="btn-primary" @onclick="StartNewCheck">+ New Check</button>
+                </div>
             }
-        </div>
+        }
+        else
+        {
+            <!-- ── Form ──────────────────────────────────────────────────────── -->
+            <div style="margin-bottom:16px;">
+                <button class="btn-secondary" @onclick="ExitForm">← Back to List</button>
+            </div>
+
+            <div class="check-document">
+                <div class="check-header">
+                    <div class="check-payer-info">
+                        <div class="check-company-name">@(_location?.Name ?? LocationSession.SelectedLocationName)</div>
+                        @if (!string.IsNullOrWhiteSpace(_location?.Address1)) { <div class="check-address-line">@_location.Address1</div> }
+                        @if (!string.IsNullOrWhiteSpace(_location?.Address2)) { <div class="check-address-line">@_location.Address2</div> }
+                        @if (!string.IsNullOrWhiteSpace(_location?.City))
+                        {
+                            <div class="check-address-line">
+                                @_location.City@(!string.IsNullOrWhiteSpace(_location.State) ? ", " + _location.State : "") @_location.Zip
+                            </div>
+                        }
+                    </div>
+                    <div class="check-number-date">
+                        <div class="check-number-label">No. <span class="check-number-value">@_checkNumber.ToString("D5")</span></div>
+                        <div class="check-date-row">
+                            <label class="check-label">Date</label>
+                            <input type="date" class="check-input check-date-input"
+                                   @bind="_transactionDate" @bind:format="yyyy-MM-dd" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="check-payto-section">
+                    <div class="check-payto-row">
+                        <span class="check-label-fixed">Pay to the Order of</span>
+                        <div class="check-payto-field">
+                            @if (_useManualVendor)
+                            {
+                                <input type="text" class="check-line-input" placeholder="Payee name"
+                                       @bind="_manualName" @bind:event="oninput" maxlength="100" />
+                            }
+                            else
+                            {
+                                <select class="check-line-select" @bind="_selectedVendorId" @bind:after="OnVendorChangedAsync">
+                                    <option value="0">— Select Vendor —</option>
+                                    @foreach (var v in _setupVendors)
+                                    { <option value="@v.VendorID">@v.VendorName</option> }
+                                </select>
+                            }
+                        </div>
+                        <label class="check-manual-toggle">
+                            <input type="checkbox" @bind="_useManualVendor" @bind:after="OnManualToggled" /> Manual
+                        </label>
+                        <div class="check-amount-box">
+                            $&nbsp;<input type="number" step="0.01" min="0" class="check-amount-input"
+                                   @bind="_amount" @bind:event="oninput" @bind:after="OnAmountChanged" />
+                        </div>
+                    </div>
+                    <div class="check-words-row">
+                        <span class="check-amount-words">@_amountWords</span>
+                    </div>
+                </div>
+
+                <div class="check-vendor-section">
+                    @if (_useManualVendor)
+                    {
+                        <div class="check-manual-address">
+                            <input type="text" class="check-addr-input" placeholder="Address line 1" @bind="_manualAddr1" maxlength="100" />
+                            <input type="text" class="check-addr-input" placeholder="Address line 2 (optional)" @bind="_manualAddr2" maxlength="100" />
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" class="check-addr-input" placeholder="City"  @bind="_manualCity"  maxlength="100" style="flex:2;" />
+                                <input type="text" class="check-addr-input" placeholder="State" @bind="_manualState" maxlength="50"  style="flex:1;" />
+                                <input type="text" class="check-addr-input" placeholder="ZIP"   @bind="_manualZip"   maxlength="20"  style="flex:1;" />
+                            </div>
+                        </div>
+                    }
+                    else if (_selectedVendor is not null)
+                    {
+                        <div class="check-vendor-address">
+                            <div>@_selectedVendor.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(_selectedVendor.Address1))  { <div>@_selectedVendor.Address1</div> }
+                            @if (!string.IsNullOrWhiteSpace(_selectedVendor.Address2))  { <div>@_selectedVendor.Address2</div> }
+                            @if (!string.IsNullOrWhiteSpace(_selectedVendor.City))
+                            { <div>@_selectedVendor.City@(!string.IsNullOrWhiteSpace(_selectedVendor.StateCode) ? ", " + _selectedVendor.StateCode : "") @_selectedVendor.PostalCode</div> }
+                        </div>
+                    }
+                    else { <div class="check-vendor-placeholder">Vendor address will appear here</div> }
+                </div>
+
+                <div class="check-footer-section">
+                    <div class="check-memo-row">
+                        <label class="check-label-fixed">Memo</label>
+                        <input type="text" class="check-line-input" @bind="_memo" maxlength="500" />
+                    </div>
+                    <div class="check-account-row">
+                        <label class="check-label-fixed">Expense Account</label>
+                        <select class="check-line-select" @bind="_expenseAccountId">
+                            <option value="0">— None —</option>
+                            @foreach (var a in _setupAccounts)
+                            { <option value="@a.AccountID">@a.AccountName @(string.IsNullOrWhiteSpace(a.FullAccountString) ? "" : "(" + a.FullAccountString + ")")</option> }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="check-actions">
+                    <button class="btn-primary" @onclick="SaveAsync" disabled="@_busy">
+                        @(_busy ? "Saving…" : (_editCheckId > 0 ? "Update Check" : "Save"))
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- ── Recent Checks (always visible) ───────────────────────────────── -->
+        @if (_recentChecks.Count > 0)
+        {
+            <div style="max-width:750px;margin-top:32px;">
+                <h2 class="form-section-title">Recent Checks</h2>
+
+                @if (_selectedCheck is not null)
+                {
+                    <div class="check-selected-panel">
+                        <div style="flex:1;">
+                            <strong>Check #@_selectedCheck.CheckNumber.ToString("D5")</strong>
+                            — @(_selectedCheck.IsManualVendor ? _selectedCheck.ManualVendorName : _selectedCheck.VendorName)
+                            — @_selectedCheck.Amount.ToString("C")
+                            — @_selectedCheck.TransactionDate.ToString("MM/dd/yyyy")
+                            &nbsp;<span class="status-badge status-@(_selectedCheck.IsVoided ? "voided" : _selectedCheck.IsSubmitted ? "submitted" : "draft")">
+                                @(_selectedCheck.IsVoided ? "Voided" : _selectedCheck.IsSubmitted ? "Submitted" : "Draft")
+                            </span>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            @if (!_selectedCheck.IsSubmitted && !_selectedCheck.IsVoided)
+                            {
+                                @if (PermissionService.CanEdit(_level))
+                                {
+                                    <button class="btn-primary check-action-btn" @onclick="EditSelectedAsync" disabled="@_busy">Edit</button>
+                                }
+                                <button class="btn-danger  check-action-btn" @onclick="VoidSelectedAsync"   disabled="@_busy">Void</button>
+                                <button class="btn-primary check-action-btn" @onclick="SubmitSelectedAsync" disabled="@_busy">Submit</button>
+                            }
+                            <button class="btn-sm check-action-btn" @onclick="() => _selectedCheck = null">Exit</button>
+                        </div>
+                    </div>
+                }
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No.</th>
+                            <th>Date</th>
+                            <th>Payee</th>
+                            <th style="text-align:right;">Amount</th>
+                            <th>Account</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _recentChecks)
+                        {
+                            var isSelected = _selectedCheck?.CheckTransactionID == c.CheckTransactionID;
+                            <tr class="@(isSelected ? "check-row-selected" : "") @(c.IsVoided ? "check-row-voided" : "")"
+                                style="cursor:pointer;" @onclick="() => SelectCheck(c)">
+                                <td>@c.CheckNumber.ToString("D5")</td>
+                                <td>@c.TransactionDate.ToString("MM/dd/yyyy")</td>
+                                <td>@(c.IsManualVendor ? c.ManualVendorName : c.VendorName)</td>
+                                <td style="text-align:right;">@c.Amount.ToString("N2")</td>
+                                <td>@c.AccountName</td>
+                                <td>
+                                    @if (c.IsVoided)      { <span class="status-badge status-voided">Voided</span> }
+                                    else if (c.IsSubmitted){ <span class="status-badge status-submitted">Submitted</span> }
+                                    else                   { <span class="status-badge status-draft">Draft</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (!_showForm && _level != "None")
+        {
+            <p style="color:var(--color-text-muted);">No checks recorded yet. Click <strong>+ New Check</strong> to create one.</p>
+        }
     </div>
 }
 
 @code {
-    private string _level = "None";
-
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private string _level = "None";
+    private Portal.Models.Location?  _location;
+    private List<CheckSetupVendor>   _setupVendors  = [];
+    private List<CheckSetupAccount>  _setupAccounts = [];
+    private List<CheckTransaction>   _recentChecks  = [];
+    private CheckTransaction?        _selectedCheck;
+
+    private bool     _showForm;
+    private int      _editCheckId;
+    private int      _checkNumber     = 1;
+    private DateOnly _transactionDate = DateOnly.FromDateTime(DateTime.Today);
+    private bool     _useManualVendor;
+    private int      _selectedVendorId;
+    private Portal.Models.Vendor? _selectedVendor;
+    private decimal  _amount;
+    private string   _amountWords    = "ZERO AND 00/100 DOLLARS";
+    private string   _memo           = string.Empty;
+    private int      _expenseAccountId;
+
+    private string _manualName  = string.Empty;
+    private string _manualAddr1 = string.Empty;
+    private string _manualAddr2 = string.Empty;
+    private string _manualCity  = string.Empty;
+    private string _manualState = string.Empty;
+    private string _manualZip   = string.Empty;
+
+    private bool   _busy;
+    private string _error      = string.Empty;
+    private string _successMsg = string.Empty;
+    private int    _currentUserId;
 
     protected override async Task OnInitializedAsync()
     {
-        if (AuthState == null) return;
-        var state = await AuthState;
-        var uid   = int.Parse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-        var role  = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "Viewer";
-        _level    = await PermissionService.GetLevelAsync(uid, role, "Checks");
+        if (!LocationSession.HasLocation) return;
+
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            int.TryParse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out _currentUserId);
+            var role = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "User";
+            _level = await PermissionSvc.GetLevelAsync(_currentUserId, role, "Checks");
+        }
+        if (_level == "None") return;
+
+        var locId = LocationSession.SelectedLocationID;
+        await Task.WhenAll(
+            LocationSvc.GetByIdAsync(locId).ContinueWith(t         => { _location      = t.Result; }),
+            SetupSvc.GetVendorsAsync(locId).ContinueWith(t         => { _setupVendors  = t.Result; }),
+            SetupSvc.GetAccountsAsync(locId).ContinueWith(t        => { _setupAccounts = t.Result; }),
+            CheckSvc.GetNextCheckNumberAsync(locId).ContinueWith(t => { _checkNumber   = t.Result; }),
+            CheckSvc.GetRecentAsync(locId).ContinueWith(t          => { _recentChecks  = t.Result; })
+        );
+    }
+
+    private void StartNewCheck()
+    {
+        ResetForm();
+        _editCheckId = 0;
+        _error = _successMsg = string.Empty;
+        _showForm = true;
+    }
+
+    private async Task EditSelectedAsync()
+    {
+        if (_selectedCheck is null) return;
+        var c = _selectedCheck;
+        _editCheckId      = c.CheckTransactionID;
+        _checkNumber      = c.CheckNumber;
+        _transactionDate  = c.TransactionDate;
+        _useManualVendor  = c.IsManualVendor;
+        _selectedVendorId = c.VendorID ?? 0;
+        _amount           = c.Amount;
+        _amountWords      = AmountToWords.Convert(c.Amount);
+        _memo             = c.Memo ?? string.Empty;
+        _expenseAccountId = c.ExpenseAccountID ?? 0;
+        _selectedVendor   = null;
+        if (c.IsManualVendor)
+        {
+            _manualName  = c.ManualVendorName;
+            _manualAddr1 = c.ManualVendorAddress1;
+            _manualAddr2 = c.ManualVendorAddress2;
+            _manualCity  = c.ManualVendorCity;
+            _manualState = c.ManualVendorState;
+            _manualZip   = c.ManualVendorZip;
+        }
+        else if (c.VendorID.HasValue)
+        {
+            var all = await VendorSvc.GetAllAsync();
+            _selectedVendor = all.FirstOrDefault(v => v.VendorID == c.VendorID.Value);
+        }
+        _error = _successMsg = string.Empty;
+        _showForm = true;
+    }
+
+    private void ExitForm()
+    {
+        _showForm    = false;
+        _editCheckId = 0;
+        _error = _successMsg = string.Empty;
+    }
+
+    private void OnAmountChanged() => _amountWords = AmountToWords.Convert(_amount);
+    private void OnManualToggled() { _selectedVendorId = 0; _selectedVendor = null; }
+
+    private async Task OnVendorChangedAsync()
+    {
+        _selectedVendor = null;
+        if (_selectedVendorId <= 0) return;
+        var all = await VendorSvc.GetAllAsync();
+        _selectedVendor = all.FirstOrDefault(v => v.VendorID == _selectedVendorId);
+    }
+
+    private void SelectCheck(CheckTransaction c)
+    {
+        _selectedCheck = _selectedCheck?.CheckTransactionID == c.CheckTransactionID ? null : c;
+        _error = _successMsg = string.Empty;
+    }
+
+    private bool Validate()
+    {
+        _error = string.Empty;
+        if (_amount <= 0) { _error = "Amount must be greater than zero."; return false; }
+        if (_useManualVendor && string.IsNullOrWhiteSpace(_manualName))
+        { _error = "Payee name is required for manual vendor."; return false; }
+        if (!_useManualVendor && _selectedVendorId <= 0)
+        { _error = "Please select a vendor or use manual entry."; return false; }
+        return true;
+    }
+
+    private CheckTransaction BuildTransaction() => new()
+    {
+        CheckTransactionID   = _editCheckId,
+        LocationID           = LocationSession.SelectedLocationID,
+        CheckNumber          = _checkNumber,
+        TransactionDate      = _transactionDate,
+        IsManualVendor       = _useManualVendor,
+        Amount               = _amount,
+        Memo                 = _memo,
+        ExpenseAccountID     = _expenseAccountId > 0 ? _expenseAccountId : null,
+        VendorID             = _useManualVendor ? null : _selectedVendorId,
+        ManualVendorName     = _manualName,
+        ManualVendorAddress1 = _manualAddr1,
+        ManualVendorAddress2 = _manualAddr2,
+        ManualVendorCity     = _manualCity,
+        ManualVendorState    = _manualState,
+        ManualVendorZip      = _manualZip,
+        IsSubmitted          = false,
+        CreatedByUserID      = _currentUserId > 0 ? _currentUserId : null,
+    };
+
+    private async Task SaveAsync()
+    {
+        if (!Validate()) return;
+        _busy = true; _successMsg = string.Empty; _error = string.Empty;
+        try
+        {
+            var t = BuildTransaction();
+            if (_editCheckId > 0)
+                await CheckSvc.UpdateAsync(t);
+            else
+                await CheckSvc.InsertAsync(t);
+
+            _recentChecks = await CheckSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+            _successMsg   = _editCheckId > 0
+                ? $"Check #{_checkNumber:D5} updated."
+                : $"Check #{_checkNumber:D5} saved.";
+            _editCheckId = 0;
+            _showForm    = false;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task SubmitSelectedAsync()
+    {
+        if (_selectedCheck is null) return;
+        _busy = true; _error = _successMsg = string.Empty;
+        try
+        {
+            await CheckSvc.SubmitAsync(_selectedCheck.CheckTransactionID, _currentUserId);
+            _recentChecks = await CheckSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+            _successMsg   = $"Check #{_selectedCheck.CheckNumber:D5} submitted.";
+            _selectedCheck = _recentChecks.FirstOrDefault(c => c.CheckTransactionID == _selectedCheck.CheckTransactionID);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task VoidSelectedAsync()
+    {
+        if (_selectedCheck is null) return;
+        _busy = true; _error = _successMsg = string.Empty;
+        try
+        {
+            await CheckSvc.VoidAsync(_selectedCheck.CheckTransactionID, _currentUserId);
+            _recentChecks = await CheckSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+            _successMsg   = $"Check #{_selectedCheck.CheckNumber:D5} voided.";
+            _selectedCheck = _recentChecks.FirstOrDefault(c => c.CheckTransactionID == _selectedCheck.CheckTransactionID);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void ResetForm()
+    {
+        _checkNumber      = _recentChecks.Count > 0 ? _recentChecks.Max(c => c.CheckNumber) + 1 : _checkNumber + 1;
+        _transactionDate  = DateOnly.FromDateTime(DateTime.Today);
+        _useManualVendor  = false;
+        _selectedVendorId = 0;
+        _selectedVendor   = null;
+        _amount           = 0m;
+        _amountWords      = "ZERO AND 00/100 DOLLARS";
+        _memo             = string.Empty;
+        _expenseAccountId = 0;
+        _manualName = _manualAddr1 = _manualAddr2 = _manualCity = _manualState = _manualZip = string.Empty;
     }
 }

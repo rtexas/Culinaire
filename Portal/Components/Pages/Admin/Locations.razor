@@ -11,8 +11,11 @@
         <h1 class="page-heading">Locations</h1>
     </div>
     <p class="page-sub">
-        Manage locations. Code must be unique. The CoA Segment # links this location to a segment
-        position in the Chart of Accounts (0 = not linked).
+        Each location is a physical restaurant building. The CoA Segment links the location code
+        to a specific segment position in the Chart of Accounts (e.g. Segment 2 in
+        <strong>Dept — Location — Natural Account</strong>).
+        Set to <strong>0 — Not Linked</strong> if locations are not part of your COA structure;
+        account lists will then show the full unfiltered COA.
     </p>
 
     <!-- ── Import ─────────────────────────────────────────────────────────── -->
@@ -21,7 +24,9 @@
         <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
             Supported: Excel (.xlsx) or any delimited text file. Required columns:
             <strong>Code</strong>, <strong>Name</strong>.
-            Optional: <strong>Description</strong>, <strong>Segment Number</strong>.
+            Optional: <strong>Description</strong>, <strong>Segment Number</strong>,
+            <strong>Address1</strong>, <strong>Address2</strong>, <strong>City</strong>,
+            <strong>State</strong>, <strong>Zip</strong>.
             Existing records matched by Code are updated; new Codes are inserted.
         </p>
 
@@ -68,29 +73,30 @@
         <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
     }
 
-    <div class="form-card" style="max-width:700px;margin-bottom:24px;">
+    <div class="form-card" style="max-width:760px;margin-bottom:24px;">
         <h2 class="form-section-title">@(_editId == 0 ? "Add Location" : "Edit Location")</h2>
 
-        <div style="display:grid;grid-template-columns:1fr 130px 160px;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 140px 180px;gap:12px;">
             <div class="form-row">
                 <label>Name <span class="required">*</span></label>
-                <input type="text" @bind="_name" @bind:event="oninput" maxlength="100" placeholder="e.g. Downtown Bistro" />
+                <input type="text" @bind="_name" @bind:event="oninput" maxlength="100" placeholder="e.g. Main Restaurant" />
             </div>
             <div class="form-row">
                 <label>Code <span class="required">*</span></label>
                 <input type="text" @bind="_code" @bind:event="oninput" maxlength="20"
-                       placeholder="e.g. 200" style="text-transform:uppercase;" />
+                       placeholder="e.g. 001" style="text-transform:uppercase;" />
             </div>
             <div class="form-row">
-                <label title="Which CoA segment position this location appears in. 0 = not linked.">
-                    CoA Segment #
-                    @if (_maxSegment > 0)
-                    {
-                        <span style="font-size:11px;color:var(--color-text-muted);margin-left:4px;">(0–@_maxSegment)</span>
-                    }
+                <label title="Which COA segment position this location's code occupies. 0 = not linked to COA.">
+                    CoA Segment
                 </label>
-                <input type="number" @bind="_segmentNumber" min="0" max="@_maxSegment" step="1"
-                       style="width:100%;" />
+                <select @bind="_segmentNumber">
+                    <option value="0">0 — Not Linked</option>
+                    @foreach (var seg in _segments)
+                    {
+                        <option value="@seg.SegmentNumber">@seg.SegmentNumber — @seg.Description</option>
+                    }
+                </select>
             </div>
         </div>
 
@@ -99,13 +105,31 @@
             <input type="text" @bind="_description" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
         </div>
 
-        @if (_maxSegment == 0)
-        {
-            <p style="font-size:12px;color:var(--color-text-muted);margin:4px 0 12px;">
-                No CoA segments defined yet. Configure segments in
-                <a href="/portal/admin/chart-of-accounts">Chart of Accounts</a>.
-            </p>
-        }
+        <div class="form-section-divider" style="margin:12px 0;"></div>
+        <h3 class="form-section-title" style="font-size:.9rem;margin-bottom:10px;">Physical Address</h3>
+
+        <div class="form-row">
+            <label>Address 1</label>
+            <input type="text" @bind="_address1" maxlength="100" placeholder="Street address" style="max-width:420px;" />
+        </div>
+        <div class="form-row">
+            <label>Address 2</label>
+            <input type="text" @bind="_address2" maxlength="100" placeholder="Suite, unit, etc." style="max-width:420px;" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 80px 110px;gap:12px;max-width:560px;">
+            <div class="form-row">
+                <label>City</label>
+                <input type="text" @bind="_city" maxlength="100" />
+            </div>
+            <div class="form-row">
+                <label>State</label>
+                <input type="text" @bind="_state" maxlength="50" />
+            </div>
+            <div class="form-row">
+                <label>Zip</label>
+                <input type="text" @bind="_zip" maxlength="20" />
+            </div>
+        </div>
 
         <div class="form-actions">
             <button class="btn-primary" @onclick="SaveAsync"
@@ -121,8 +145,8 @@
 
     <!-- ── List ──────────────────────────────────────────────────────────── -->
     <div class="table-card">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
-            @_items.Count record(s)
+        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_items.Count record(s)</span>
         </div>
         @if (_items.Count == 0)
         {
@@ -133,32 +157,42 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width:100px;">Code</th>
-                        <th>Name</th>
+                        <th style="width:80px;">Code</th>
+                        <th style="width:160px;">Name</th>
+                        <th>Address</th>
                         <th>Description</th>
-                        <th style="width:110px;text-align:center;">CoA Seg #</th>
-                        <th style="width:120px;text-align:center;">Actions</th>
+                        <th style="width:110px;text-align:center;">Actions</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fCode" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fAddr" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in _items)
+                    @if (Filtered.Count == 0 && _items.Count > 0)
+                    {
+                        <tr><td colspan="5" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var item in Filtered)
                     {
                         <tr @key="item.LocationID">
                             <td><code style="font-size:.85rem;">@item.Code</code></td>
                             <td>@item.Name</td>
-                            <td>@item.Description</td>
-                            <td style="text-align:center;">
-                                @if (item.SegmentNumber > 0)
-                                {
-                                    <span class="status-badge" style="background:var(--color-primary-light);color:var(--color-primary);">
-                                        Seg @item.SegmentNumber
-                                    </span>
+                            <td style="font-size:12px;color:var(--color-text-muted);">
+                                @{
+                                    var addrParts = new List<string>();
+                                    if (!string.IsNullOrEmpty(item.Address1)) addrParts.Add(item.Address1);
+                                    if (!string.IsNullOrEmpty(item.Address2)) addrParts.Add(item.Address2);
+                                    var cityLine = string.Join(", ", new[] { item.City, item.State }.Where(x => !string.IsNullOrEmpty(x)));
+                                    if (!string.IsNullOrEmpty(item.Zip)) cityLine += (string.IsNullOrEmpty(cityLine) ? "" : " ") + item.Zip;
+                                    if (!string.IsNullOrEmpty(cityLine)) addrParts.Add(cityLine);
                                 }
-                                else
-                                {
-                                    <span style="color:var(--color-text-muted);font-size:.8rem;">—</span>
-                                }
+                                @string.Join(" · ", addrParts)
                             </td>
+                            <td style="font-size:12px;color:var(--color-text-muted);">@item.Description</td>
                             <td style="text-align:center;white-space:nowrap;">
                                 <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(item)">Edit</button>
                                 <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(item)">Delete</button>
@@ -186,8 +220,11 @@
 }
 
 @code {
-    private List<Portal.Models.Location> _items = [];
-    private int                          _maxSegment;
+    private List<Portal.Models.Location>   _items    = [];
+    private string _fCode = string.Empty; private string _fName = string.Empty; private string _fAddr = string.Empty; private string _fDesc = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.Location> Filtered => _items.Where(x => Mtch(x.Code,_fCode) && Mtch(x.Name,_fName) && (string.IsNullOrEmpty(_fAddr)||Mtch(x.City,_fAddr)||Mtch(x.State,_fAddr)) && Mtch(x.Description,_fDesc)).ToList();
+    private List<Portal.Models.CoaSegment> _segments = [];
 
     private IBrowserFile?               _importFile;
     private bool                        _showDelimiter;
@@ -200,6 +237,11 @@
     private string _code          = string.Empty;
     private string _description   = string.Empty;
     private int    _segmentNumber = 0;
+    private string _address1      = string.Empty;
+    private string _address2      = string.Empty;
+    private string _city          = string.Empty;
+    private string _state         = string.Empty;
+    private string _zip           = string.Empty;
     private string _message       = string.Empty;
     private bool   _isError;
     private Portal.Models.Location? _deleteTarget;
@@ -207,10 +249,10 @@
     protected override async Task OnInitializedAsync()
     {
         var itemsTask = LocationService.GetAllAsync();
-        var segTask   = CoaSegmentsService.GetMaxSegmentAsync();
+        var segTask   = CoaSegmentsService.GetAllAsync();
         await Task.WhenAll(itemsTask, segTask);
-        _items      = itemsTask.Result;
-        _maxSegment = segTask.Result;
+        _items    = itemsTask.Result;
+        _segments = segTask.Result;
     }
 
     private void OnFileSelected(InputFileChangeEventArgs e)
@@ -247,6 +289,11 @@
         _code          = item.Code;
         _description   = item.Description;
         _segmentNumber = item.SegmentNumber;
+        _address1      = item.Address1;
+        _address2      = item.Address2;
+        _city          = item.City;
+        _state         = item.State;
+        _zip           = item.Zip;
         _message       = string.Empty;
     }
 
@@ -257,19 +304,15 @@
         _code          = string.Empty;
         _description   = string.Empty;
         _segmentNumber = 0;
+        _address1      = string.Empty;
+        _address2      = string.Empty;
+        _city          = string.Empty;
+        _state         = string.Empty;
+        _zip           = string.Empty;
     }
 
     private async Task SaveAsync()
     {
-        if (_segmentNumber < 0 || (_segmentNumber > 0 && _segmentNumber > _maxSegment))
-        {
-            _message = _maxSegment == 0
-                ? "No CoA segments defined. Set Segment # to 0, or define segments in Chart of Accounts first."
-                : $"CoA Segment # must be 0 (not linked) or between 1 and {_maxSegment}.";
-            _isError = true;
-            return;
-        }
-
         var item = new Portal.Models.Location
         {
             LocationID    = _editId,
@@ -277,6 +320,11 @@
             Code          = _code,
             Description   = _description,
             SegmentNumber = _segmentNumber,
+            Address1      = _address1,
+            Address2      = _address2,
+            City          = _city,
+            State         = _state,
+            Zip           = _zip,
         };
         try
         {

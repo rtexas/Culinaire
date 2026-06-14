@@ -1,0 +1,293 @@
+@page "/portal/admin/employee-setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject EmployeeService EmployeeSvc
+@inject LocationService LocationSvc
+
+<PageTitle>Employee Setup — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Employee Setup</h1>
+        <button class="btn-primary" @onclick="NewEmployee">+ New Employee</button>
+    </div>
+    <p class="page-sub">Manage employees and their assigned locations.</p>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Employees</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required columns:
+            <strong>ExternalID</strong>, <strong>Name</strong>.
+            Optional: <strong>Description</strong>, <strong>IsActive</strong>, <strong>LocationCode</strong>.
+            Use one row per location assignment; rows with the same ExternalID are merged.
+            Existing employees matched by ExternalID are updated.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnImportFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="RunImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error" style="max-width:700px;margin-bottom:16px;">@_error</div>
+    }
+    @if (!string.IsNullOrEmpty(_successMsg))
+    {
+        <div class="alert alert-success" style="max-width:700px;margin-bottom:16px;">@_successMsg</div>
+    }
+
+    <!-- ── Editor ─────────────────────────────────────────────────────────── -->
+    @if (_editing is not null)
+    {
+        <div class="form-card" style="max-width:700px;margin-bottom:28px;">
+            <h2 class="form-section-title">@(_editing.EmployeeID == 0 ? "New Employee" : "Edit Employee")</h2>
+
+            <div class="form-row">
+                <label>External ID <span style="color:red;">*</span></label>
+                <input type="text" @bind="_editing.ExternalID" maxlength="50" style="max-width:200px;" />
+            </div>
+            <div class="form-row">
+                <label>Name <span style="color:red;">*</span></label>
+                <input type="text" @bind="_editing.Name" maxlength="100" style="max-width:400px;" />
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea @bind="_editing.Description" rows="2" maxlength="500" style="max-width:500px;"></textarea>
+            </div>
+            <div class="form-row">
+                <label>Active</label>
+                <input type="checkbox" @bind="_editing.IsActive" />
+            </div>
+
+            <!-- Location assignment -->
+            <div class="form-section-divider"></div>
+            <h3 class="form-section-title" style="font-size:.95rem;">Assigned Locations</h3>
+            <p style="font-size:13px;color:var(--color-text-muted);margin-bottom:12px;">
+                Check the locations this employee is assigned to.
+            </p>
+            <div class="form-card" style="max-width:500px;padding:16px;margin-bottom:12px;">
+                @foreach (var loc in _allLocations)
+                {
+                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                        <input type="checkbox"
+                               checked="@_editing.LocationIDs.Contains(loc.LocationID)"
+                               @onchange="e => ToggleLocation(loc.LocationID, (bool)e.Value!)" />
+                        <code style="font-size:.85rem;min-width:70px;">@loc.Code</code>
+                        <span>@loc.Name</span>
+                    </label>
+                }
+            </div>
+
+            <div class="form-actions">
+                <button class="btn-primary" @onclick="SaveAsync" disabled="@_busy">
+                    @(_busy ? "Saving…" : "Save")
+                </button>
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <!-- ── Employee list ──────────────────────────────────────────────────── -->
+    @if (_loading)
+    {
+        <div class="loading-spinner">Loading…</div>
+    }
+    else if (_employees.Count == 0 && _editing is null)
+    {
+        <p style="color:var(--color-text-muted);">No employees found. Click <strong>+ New Employee</strong> to add one.</p>
+    }
+    else
+    {
+        <div class="table-card">
+            <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+                <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_employees.Count record(s)</span>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>External ID</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Locations</th>
+                        <th>Status</th>
+                        <th style="width:80px;"></th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fExtId" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th><input type="search" @bind="_fStatus" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Filtered.Count == 0 && _employees.Count > 0)
+                    {
+                        <tr><td colspan="6" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var emp in Filtered)
+                    {
+                        <tr @key="emp.EmployeeID">
+                            <td>@emp.ExternalID</td>
+                            <td>@emp.Name</td>
+                            <td style="font-size:12px;color:var(--color-text-muted);">@emp.Description</td>
+                            <td style="font-size:12px;">
+                                @string.Join(", ", _allLocations
+                                    .Where(l => emp.LocationIDs.Contains(l.LocationID))
+                                    .Select(l => l.Code))
+                            </td>
+                            <td>
+                                @if (emp.IsActive)
+                                { <span class="status-badge status-active">Active</span> }
+                                else
+                                { <span class="status-badge status-inactive">Inactive</span> }
+                            </td>
+                            <td>
+                                <button class="btn-sm" @onclick="() => EditEmployee(emp)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Employee>              _employees    = [];
+    private string _fExtId = string.Empty; private string _fName = string.Empty; private string _fDesc = string.Empty; private string _fStatus = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Employee> Filtered => _employees.Where(x => Mtch(x.ExternalID,_fExtId) && Mtch(x.Name,_fName) && Mtch(x.Description,_fDesc) && (string.IsNullOrEmpty(_fStatus)||(x.IsActive?"Active":"Inactive").Contains(_fStatus,StringComparison.OrdinalIgnoreCase))).ToList();
+    private List<Portal.Models.Location> _allLocations = [];
+    private Employee? _editing;
+    private bool   _loading = true;
+    private bool   _busy;
+    private string _error      = string.Empty;
+    private string _successMsg = string.Empty;
+
+    // Import
+    private IBrowserFile? _importFile;
+    private bool          _importing;
+    private bool          _showDelimiter;
+    private string        _delimiter    = "|";
+    private ImportResult? _importResult;
+
+    private void OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        var ext = Path.GetExtension(e.File.Name).ToLowerInvariant();
+        _showDelimiter = ext is not ".xlsx" and not ".xls";
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            var delim = string.IsNullOrEmpty(_delimiter) ? ',' : _delimiter[0];
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await EmployeeSvc.ImportAsync(stream, _importFile.Name, delim);
+            _employees    = await EmployeeSvc.GetAllAsync();
+        }
+        catch (Exception ex) { _importResult = new ImportResult { Errors = [ex.Message] }; }
+        finally { _importing = false; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(
+            EmployeeSvc.GetAllAsync().ContinueWith(t => { _employees    = t.Result; }),
+            LocationSvc.GetAllAsync().ContinueWith(t  => { _allLocations = t.Result.Where(l => l.IsActive).ToList(); })
+        );
+        _loading = false;
+    }
+
+    private void NewEmployee()
+    {
+        _error = _successMsg = string.Empty;
+        _editing = new Employee { IsActive = true };
+    }
+
+    private void EditEmployee(Employee emp)
+    {
+        _error = _successMsg = string.Empty;
+        _editing = new Employee
+        {
+            EmployeeID  = emp.EmployeeID,
+            ExternalID  = emp.ExternalID,
+            Name        = emp.Name,
+            Description = emp.Description,
+            IsActive    = emp.IsActive,
+            LocationIDs = [..emp.LocationIDs],
+        };
+    }
+
+    private void CancelEdit() { _editing = null; _error = string.Empty; }
+
+    private void ToggleLocation(int locationId, bool add)
+    {
+        if (_editing is null) return;
+        if (add && !_editing.LocationIDs.Contains(locationId))
+            _editing.LocationIDs.Add(locationId);
+        else if (!add)
+            _editing.LocationIDs.Remove(locationId);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+        _error = string.Empty;
+        if (string.IsNullOrWhiteSpace(_editing.ExternalID))
+        { _error = "External ID is required."; return; }
+        if (string.IsNullOrWhiteSpace(_editing.Name))
+        { _error = "Name is required."; return; }
+
+        _busy = true;
+        try
+        {
+            if (_editing.EmployeeID == 0)
+                await EmployeeSvc.CreateAsync(_editing);
+            else
+                await EmployeeSvc.UpdateAsync(_editing);
+
+            _employees   = await EmployeeSvc.GetAllAsync();
+            _successMsg  = $"Employee '{_editing.Name}' saved.";
+            _editing     = null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

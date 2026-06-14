@@ -247,10 +247,16 @@ public sealed class VendorService
         var map = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
-        await using var cmd    = new SqlCommand("SELECT [AccountID],[AccountName] FROM [dbo].[ChartOfAccounts];", conn);
+        await using var cmd = new SqlCommand(
+            "SELECT [AccountID],[AccountName],ISNULL([FullAccountString],'') FROM [dbo].[ChartOfAccounts];", conn);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            map.TryAdd(reader.GetString(1), reader.GetInt32(0));
+        {
+            var id   = reader.GetInt32(0);
+            map.TryAdd(reader.GetString(1), id);          // match by AccountName
+            var full = reader.GetString(2);
+            if (!string.IsNullOrEmpty(full)) map.TryAdd(full, id); // match by FullAccountString
+        }
         return map;
     }
 

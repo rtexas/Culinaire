@@ -21,6 +21,10 @@
     <None Include="SQL\Addendum_Payables.sql" />
     <None Include="SQL\Addendum_Locations.sql" />
     <None Include="SQL\Addendum_CoaSegments.sql" />
+    <None Include="SQL\Addendum_EodSetup.sql" />
+    <None Include="SQL\Addendum_EodSalesSetup.sql" />
+    <None Include="SQL\Addendum_Checks.sql" />
+    <None Include="SQL\Addendum_Departments.sql" />
   </ItemGroup>
 
 </Project>

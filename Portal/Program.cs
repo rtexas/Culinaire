@@ -62,7 +62,20 @@ builder.Services.AddSingleton<ChartOfAccountsService>(sp => new ChartOfAccountsS
 builder.Services.AddSingleton<ItemService>(_ => new ItemService(connectionString));
 builder.Services.AddSingleton<ShippingMethodService>(_ => new ShippingMethodService(connectionString));
 builder.Services.AddSingleton<PayableService>(_ => new PayableService(connectionString));
+builder.Services.AddSingleton<EodRowService>(_ => new EodRowService(connectionString));
+builder.Services.AddSingleton<EodColumnService>(_ => new EodColumnService(connectionString));
+builder.Services.AddSingleton<EodSectionService>(_ => new EodSectionService(connectionString));
+builder.Services.AddSingleton<EodSetupService>(_ => new EodSetupService(connectionString));
+builder.Services.AddSingleton<EodSalesService>(sp =>
+    new EodSalesService(connectionString, sp.GetRequiredService<EodSetupService>()));
+builder.Services.AddSingleton<CheckSetupService>(_ => new CheckSetupService(connectionString));
+builder.Services.AddSingleton<CheckService>(_ => new CheckService(connectionString));
+builder.Services.AddSingleton<EmployeeService>(_ => new EmployeeService(connectionString));
+builder.Services.AddSingleton<JobRoleService>(_ => new JobRoleService(connectionString));
+builder.Services.AddSingleton<PayrollBatchService>(_ => new PayrollBatchService(connectionString));
+builder.Services.AddSingleton<PayrollRunService>(_ => new PayrollRunService(connectionString));
 builder.Services.AddSingleton<LocationService>(_ => new LocationService(connectionString));
+builder.Services.AddSingleton<DepartmentService>(_ => new DepartmentService(connectionString));
 builder.Services.AddSingleton<CoaSegmentsService>(_ => new CoaSegmentsService(connectionString));
 builder.Services.AddScoped<LocationSessionService>();
 
@@ -120,3 +133,4 @@ app.MapRazorComponents<Portal.Components.App>()
 
 await app.RunAsync();
 return 0;
+

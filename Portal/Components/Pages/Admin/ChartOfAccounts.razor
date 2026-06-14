@@ -90,13 +90,34 @@
         </div>
     </div>
 
+    <!-- ── G/L Account Delimiter ─────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;max-width:520px;">
+        <h2 class="form-section-title">Account Number Delimiter</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            The character that separates segments in a full G/L account string (e.g. <code>-</code> → <code>01-001-4000</code>).
+        </p>
+        @if (!string.IsNullOrEmpty(_delimMessage))
+        {
+            <div class="alert @(_delimError ? "alert-error" : "alert-success")" style="margin-bottom:10px;">@_delimMessage</div>
+        }
+        <div style="display:flex;align-items:flex-end;gap:12px;">
+            <div class="form-row" style="margin:0;width:80px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_segDelimiter" maxlength="3" style="width:100%;" />
+            </div>
+            <button class="btn-primary" @onclick="SaveDelimiterAsync">Save</button>
+        </div>
+    </div>
+
     <!-- ── Import Section ─────────────────────────────────────────────────── -->
     <div class="form-card" style="margin-bottom:28px;">
         <h2 class="form-section-title">Import Accounts</h2>
         <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
-            Supported: Excel (.xlsx) or any delimited text file. Required columns (header row):
-            <strong>Account Name</strong>, <strong>Account Description</strong>,
-            <strong>Account Category</strong>, <strong>Account Type</strong>.
+            Supported: Excel (.xlsx) or any delimited text file. Required column: <strong>Account Name</strong>
+            (or <strong>Account</strong> for the full G/L account string).
+            Optional: <strong>Account Description</strong>, <strong>Account Category</strong>,
+            <strong>Account Type</strong>, <strong>Active</strong>.
+            The <strong>Account</strong> column is split by the delimiter above to populate segment values.
             Missing categories or types are created automatically.
         </p>
 
@@ -151,32 +172,68 @@
         <div class="alert @(_crudError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_crudMessage</div>
     }
 
-    <div class="form-card" style="max-width:700px;margin-bottom:24px;">
+    <div class="form-card" style="max-width:760px;margin-bottom:24px;">
         <h2 class="form-section-title">@(_editId == 0 ? "Add Account" : "Edit Account")</h2>
-        <div class="form-row">
-            <label>Account Name <span class="required">*</span></label>
-            <input type="text" @bind="_accName" @bind:event="oninput" maxlength="200" placeholder="Account name" />
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-row">
+                <label>Account Name <span class="required">*</span></label>
+                <input type="text" @bind="_accName" @bind:event="oninput" maxlength="200" placeholder="Display name" />
+            </div>
+            <div class="form-row">
+                <label title="Full G/L account string (e.g. 01-001-4000). Split by delimiter to populate segment values.">
+                    G/L Account String
+                </label>
+                <input type="text" @bind="_accFull" @bind:event="oninput" @onblur="OnFullAccountBlur"
+                       maxlength="200" placeholder="e.g. 01-001-4000" />
+            </div>
         </div>
+
+        @if (_segments.Count > 0 && !string.IsNullOrWhiteSpace(_accFull))
+        {
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:8px 12px;background:var(--color-bg-page);border-radius:6px;border:1px solid var(--color-border);">
+                <span style="font-size:12px;color:var(--color-text-muted);align-self:center;">Segments:</span>
+                @for (int s = 0; s < _segments.Count; s++)
+                {
+                    var seg = _segments[s];
+                    var val = GetSegVal(s);
+                    <span style="font-size:12px;">
+                        <span style="color:var(--color-text-muted);">@seg.Description:</span>
+                        <code style="margin-left:3px;">@(string.IsNullOrEmpty(val) ? "—" : val)</code>
+                    </span>
+                }
+            </div>
+        }
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-row" style="max-width:320px;">
+                <label>Category</label>
+                <select @bind="_accCategoryId">
+                    <option value="0">— None —</option>
+                    @foreach (var c in _categories)
+                    { <option value="@c.CategoryID">@c.Name</option> }
+                </select>
+            </div>
+            <div class="form-row" style="max-width:320px;">
+                <label>Account Type</label>
+                <select @bind="_accTypeId">
+                    <option value="0">— None —</option>
+                    @foreach (var t in _types)
+                    { <option value="@t.TypeID">@t.Name</option> }
+                </select>
+            </div>
+        </div>
+
         <div class="form-row">
             <label>Description</label>
             <input type="text" @bind="_accDesc" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
         </div>
-        <div class="form-row" style="max-width:320px;">
-            <label>Category</label>
-            <select @bind="_accCategoryId">
-                <option value="0">— None —</option>
-                @foreach (var c in _categories)
-                { <option value="@c.CategoryID">@c.Name</option> }
-            </select>
+
+        <div class="form-row" style="max-width:200px;">
+            <label>Active</label>
+            <input type="checkbox" @bind="_accIsActive" style="width:auto;" />
         </div>
-        <div class="form-row" style="max-width:320px;">
-            <label>Account Type</label>
-            <select @bind="_accTypeId">
-                <option value="0">— None —</option>
-                @foreach (var t in _types)
-                { <option value="@t.TypeID">@t.Name</option> }
-            </select>
-        </div>
+
         <div class="form-actions">
             <button class="btn-primary" @onclick="SaveAccountAsync" disabled="@string.IsNullOrWhiteSpace(_accName)">
                 @(_editId == 0 ? "Add Account" : "Save Changes")
@@ -190,8 +247,8 @@
 
     <!-- ── Accounts Table ─────────────────────────────────────────────────── -->
     <div class="table-card">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
-            @_accounts.Count account(s)
+        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--color-text-muted);">@FilteredAccounts.Count of @_accounts.Count account(s)</span>
         </div>
         @if (_accounts.Count == 0)
         {
@@ -203,20 +260,37 @@
                 <thead>
                     <tr>
                         <th>Account Name</th>
-                        <th>Description</th>
+                        <th>G/L Account</th>
                         <th>Category</th>
                         <th>Type</th>
+                        <th style="width:60px;text-align:center;">Active</th>
                         <th style="width:120px;text-align:center;">Actions</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fAccount" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fCategory" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fType" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var a in _accounts)
+                    @if (FilteredAccounts.Count == 0 && _accounts.Count > 0)
+                    {
+                        <tr><td colspan="6" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var a in FilteredAccounts)
                     {
                         <tr @key="a.AccountID">
                             <td>@a.AccountName</td>
-                            <td>@a.AccountDescription</td>
+                            <td><code style="font-size:.85rem;">@a.FullAccountString</code></td>
                             <td>@a.CategoryName</td>
                             <td>@a.TypeName</td>
+                            <td style="text-align:center;">
+                                @if (a.IsActive) { <span style="color:var(--color-primary);">✓</span> }
+                                else             { <span style="color:var(--color-text-muted);">—</span> }
+                            </td>
                             <td style="text-align:center;white-space:nowrap;">
                                 <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(a)">Edit</button>
                                 <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(a)">Delete</button>
@@ -255,6 +329,9 @@
 
     // ── Data ──────────────────────────────────────────────────────────────────
     private List<Portal.Models.ChartOfAccount>   _accounts   = [];
+    private string _fName = string.Empty; private string _fAccount = string.Empty; private string _fCategory = string.Empty; private string _fType = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.ChartOfAccount> FilteredAccounts => _accounts.Where(x => Mtch(x.AccountName,_fName) && Mtch(x.FullAccountString,_fAccount) && Mtch(x.CategoryName,_fCategory) && Mtch(x.TypeName,_fType)).ToList();
     private List<Portal.Models.AccountCategory>  _categories = [];
     private List<Portal.Models.AccountType>      _types      = [];
 
@@ -265,28 +342,47 @@
     private bool                       _importing;
     private Portal.Models.ImportResult? _importResult;
 
+    // ── Delimiter ─────────────────────────────────────────────────────────────
+    private string _segDelimiter  = "-";
+    private string _delimMessage  = string.Empty;
+    private bool   _delimError;
+
     // ── CRUD state ────────────────────────────────────────────────────────────
     private int    _editId        = 0;
     private string _accName       = string.Empty;
+    private string _accFull       = string.Empty;
     private string _accDesc       = string.Empty;
     private int    _accCategoryId = 0;
     private int    _accTypeId     = 0;
+    private bool   _accIsActive   = true;
     private string _crudMessage   = string.Empty;
     private bool   _crudError;
     private Portal.Models.ChartOfAccount? _deleteTarget;
 
     protected override async Task OnInitializedAsync()
     {
-        var segTask  = SegmentsService.GetAllAsync();
-        var catTask  = CategoryService.GetAllAsync();
-        var typeTask = TypeService.GetAllAsync();
-        var accTask  = CoaService.GetAllAsync();
-        await Task.WhenAll(segTask, catTask, typeTask, accTask);
-        _segments   = segTask.Result;
-        _categories = catTask.Result;
-        _types      = typeTask.Result;
-        _accounts   = accTask.Result;
-        _newSegNum  = _segments.Count == 0 ? 1 : _segments[^1].SegmentNumber + 1;
+        var segTask   = SegmentsService.GetAllAsync();
+        var catTask   = CategoryService.GetAllAsync();
+        var typeTask  = TypeService.GetAllAsync();
+        var accTask   = CoaService.GetAllAsync();
+        var delimTask = CoaService.GetDelimiterAsync();
+        await Task.WhenAll(segTask, catTask, typeTask, accTask, delimTask);
+        _segments     = segTask.Result;
+        _categories   = catTask.Result;
+        _types        = typeTask.Result;
+        _accounts     = accTask.Result;
+        _segDelimiter = delimTask.Result;
+        _newSegNum    = _segments.Count == 0 ? 1 : _segments[^1].SegmentNumber + 1;
+    }
+
+    private async Task SaveDelimiterAsync()
+    {
+        try
+        {
+            await CoaService.SaveDelimiterAsync(_segDelimiter);
+            _delimMessage = "Delimiter saved."; _delimError = false;
+        }
+        catch (Exception ex) { _delimMessage = ex.Message; _delimError = true; }
     }
 
     // ── Segment CRUD ──────────────────────────────────────────────────────────
@@ -357,8 +453,7 @@
         {
             char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
             await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            _importResult = await CoaService.ImportAsync(stream, _importFile.Name, delim);
-            // Refresh all lists in case import created categories/types
+            _importResult = await CoaService.ImportAsync(stream, _importFile.Name, delim, _segDelimiter);
             _categories = await CategoryService.GetAllAsync();
             _types      = await TypeService.GetAllAsync();
             _accounts   = await CoaService.GetAllAsync();
@@ -370,15 +465,32 @@
         finally { _importing = false; }
     }
 
+    // ── Segment helpers ───────────────────────────────────────────────────────
+
+    private string GetSegVal(int index)
+    {
+        if (string.IsNullOrWhiteSpace(_accFull)) return string.Empty;
+        var parts = _accFull.Split(_segDelimiter, StringSplitOptions.None);
+        return index < parts.Length ? parts[index].Trim() : string.Empty;
+    }
+
+    private void OnFullAccountBlur()
+    {
+        // Trigger re-render so segment breakdown preview updates
+        StateHasChanged();
+    }
+
     // ── CRUD ─────────────────────────────────────────────────────────────────
 
     private void BeginEdit(Portal.Models.ChartOfAccount a)
     {
         _editId        = a.AccountID;
         _accName       = a.AccountName;
+        _accFull       = a.FullAccountString;
         _accDesc       = a.AccountDescription;
         _accCategoryId = a.CategoryID ?? 0;
         _accTypeId     = a.TypeID     ?? 0;
+        _accIsActive   = a.IsActive;
         _crudMessage   = string.Empty;
     }
 
@@ -386,20 +498,36 @@
     {
         _editId        = 0;
         _accName       = string.Empty;
+        _accFull       = string.Empty;
         _accDesc       = string.Empty;
         _accCategoryId = 0;
         _accTypeId     = 0;
+        _accIsActive   = true;
     }
 
     private async Task SaveAccountAsync()
     {
+        var parts = string.IsNullOrWhiteSpace(_accFull)
+            ? Array.Empty<string>()
+            : _accFull.Split(_segDelimiter, StringSplitOptions.None);
+
+        string SegPart(int i) => i < parts.Length ? parts[i].Trim() : string.Empty;
+
         var item = new Portal.Models.ChartOfAccount
         {
             AccountID          = _editId,
             AccountName        = _accName,
+            FullAccountString  = _accFull.Trim(),
             AccountDescription = _accDesc,
             CategoryID         = _accCategoryId == 0 ? null : _accCategoryId,
             TypeID             = _accTypeId     == 0 ? null : _accTypeId,
+            IsActive           = _accIsActive,
+            Seg1Value          = SegPart(0),
+            Seg2Value          = SegPart(1),
+            Seg3Value          = SegPart(2),
+            Seg4Value          = SegPart(3),
+            Seg5Value          = SegPart(4),
+            Seg6Value          = SegPart(5),
         };
         try
         {
@@ -437,3 +565,4 @@
         _accounts     = await CoaService.GetAllAsync();
     }
 }
+

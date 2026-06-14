@@ -1,0 +1,268 @@
+@page "/portal/admin/department-setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject DepartmentService DeptSvc
+@inject LocationService   LocationSvc
+
+<PageTitle>Department Setup — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Department Setup</h1>
+        <button class="btn-primary" @onclick="NewDept">+ New Department</button>
+    </div>
+    <p class="page-sub">
+        Departments represent cost centers within each location. The Department Code is the middle segment
+        of the Chart of Accounts: <strong>Location — Dept — Natural Account</strong>.
+    </p>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Departments</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required columns:
+            <strong>Code</strong>, <strong>Name</strong>.
+            Optional: <strong>Description</strong>, <strong>IsActive</strong>, <strong>LocationCode</strong>.
+            Use one row per location assignment; same Code rows are merged.
+            Existing departments matched by Code are updated.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnImportFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="RunImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    { <div class="alert alert-error" style="max-width:700px;margin-bottom:16px;">@_error</div> }
+    @if (!string.IsNullOrEmpty(_successMsg))
+    { <div class="alert alert-success" style="max-width:700px;margin-bottom:16px;">@_successMsg</div> }
+
+    <!-- ── Editor ─────────────────────────────────────────────────────────── -->
+    @if (_editing is not null)
+    {
+        <div class="form-card" style="max-width:700px;margin-bottom:28px;">
+            <h2 class="form-section-title">@(_editing.DepartmentID == 0 ? "New Department" : "Edit Department")</h2>
+
+            <div style="display:grid;grid-template-columns:160px 1fr;gap:12px;max-width:560px;">
+                <div class="form-row">
+                    <label>Code <span style="color:red;">*</span></label>
+                    <input type="text" @bind="_editing.Code" maxlength="20"
+                           style="text-transform:uppercase;" placeholder="e.g. BAR" />
+                </div>
+                <div class="form-row">
+                    <label>Name <span style="color:red;">*</span></label>
+                    <input type="text" @bind="_editing.Name" maxlength="100" />
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea @bind="_editing.Description" rows="2" maxlength="500" style="max-width:500px;"></textarea>
+            </div>
+            <div class="form-row">
+                <label>Active</label>
+                <input type="checkbox" @bind="_editing.IsActive" />
+            </div>
+
+            <div class="form-section-divider"></div>
+            <h3 class="form-section-title" style="font-size:.95rem;">Assigned Locations</h3>
+            <p style="font-size:13px;color:var(--color-text-muted);margin-bottom:12px;">
+                Check the locations where this department operates.
+            </p>
+            <div class="form-card" style="max-width:500px;padding:16px;margin-bottom:12px;">
+                @foreach (var loc in _allLocations)
+                {
+                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                        <input type="checkbox"
+                               checked="@_editing.LocationIDs.Contains(loc.LocationID)"
+                               @onchange="e => ToggleLocation(loc.LocationID, (bool)e.Value!)" />
+                        <code style="font-size:.85rem;min-width:70px;">@loc.Code</code>
+                        <span>@loc.Name</span>
+                    </label>
+                }
+            </div>
+
+            <div class="form-actions">
+                <button class="btn-primary" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <!-- ── List ───────────────────────────────────────────────────────────── -->
+    @if (_loading)
+    { <div class="loading-spinner">Loading…</div> }
+    else if (_depts.Count == 0 && _editing is null)
+    { <p style="color:var(--color-text-muted);">No departments defined. Click <strong>+ New Department</strong> to add one.</p> }
+    else
+    {
+        <div class="table-card">
+            <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+                <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_depts.Count record(s)</span>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Locations</th>
+                        <th>Status</th>
+                        <th style="width:80px;"></th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fCode" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Filtered.Count == 0 && _depts.Count > 0)
+                    {
+                        <tr><td colspan="6" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var d in Filtered)
+                    {
+                        <tr @key="d.DepartmentID">
+                            <td><code>@d.Code</code></td>
+                            <td>@d.Name</td>
+                            <td style="font-size:12px;color:var(--color-text-muted);">@d.Description</td>
+                            <td style="font-size:12px;">
+                                @string.Join(", ", _allLocations
+                                    .Where(l => d.LocationIDs.Contains(l.LocationID))
+                                    .Select(l => l.Code))
+                            </td>
+                            <td>
+                                @if (d.IsActive)
+                                { <span class="status-badge status-active">Active</span> }
+                                else
+                                { <span class="status-badge status-inactive">Inactive</span> }
+                            </td>
+                            <td><button class="btn-sm" @onclick="() => EditDept(d)">Edit</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Department>             _depts       = [];
+    private string _fCode = string.Empty; private string _fName = string.Empty; private string _fDesc = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Department> Filtered => _depts.Where(x => Mtch(x.Code,_fCode) && Mtch(x.Name,_fName) && Mtch(x.Description,_fDesc)).ToList();
+    private List<Portal.Models.Location> _allLocations = [];
+    private Department? _editing;
+    private bool   _loading = true;
+    private bool   _busy;
+    private string _error      = string.Empty;
+    private string _successMsg = string.Empty;
+
+    // Import
+    private IBrowserFile? _importFile;
+    private bool          _importing;
+    private bool          _showDelimiter;
+    private string        _delimiter   = "|";
+    private ImportResult? _importResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(
+            DeptSvc.GetAllAsync().ContinueWith(t     => { _depts        = t.Result; }),
+            LocationSvc.GetAllAsync().ContinueWith(t => { _allLocations = t.Result.Where(l => l.IsActive).ToList(); })
+        );
+        _loading = false;
+    }
+
+    private void NewDept()  { _error = _successMsg = string.Empty; _editing = new Department { IsActive = true }; }
+    private void CancelEdit() { _editing = null; _error = string.Empty; }
+
+    private void EditDept(Department d)
+    {
+        _error = _successMsg = string.Empty;
+        _editing = new Department
+        {
+            DepartmentID = d.DepartmentID, Code = d.Code, Name = d.Name,
+            Description  = d.Description, IsActive = d.IsActive,
+            LocationIDs  = [..d.LocationIDs],
+        };
+    }
+
+    private void ToggleLocation(int locId, bool add)
+    {
+        if (_editing is null) return;
+        if (add && !_editing.LocationIDs.Contains(locId)) _editing.LocationIDs.Add(locId);
+        else if (!add) _editing.LocationIDs.Remove(locId);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+        _error = string.Empty;
+        if (string.IsNullOrWhiteSpace(_editing.Code)) { _error = "Code is required."; return; }
+        if (string.IsNullOrWhiteSpace(_editing.Name)) { _error = "Name is required."; return; }
+        _busy = true;
+        try
+        {
+            if (_editing.DepartmentID == 0) await DeptSvc.CreateAsync(_editing);
+            else                            await DeptSvc.UpdateAsync(_editing);
+            _depts      = await DeptSvc.GetAllAsync();
+            _successMsg = $"Department '{_editing.Name}' saved.";
+            _editing    = null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile   = e.File; _importResult = null;
+        _showDelimiter = Path.GetExtension(e.File.Name).ToLowerInvariant() is not ".xlsx" and not ".xls";
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            var delim = string.IsNullOrEmpty(_delimiter) ? ',' : _delimiter[0];
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await DeptSvc.ImportAsync(stream, _importFile.Name, delim);
+            _depts        = await DeptSvc.GetAllAsync();
+        }
+        catch (Exception ex) { _importResult = new ImportResult { Errors = [ex.Message] }; }
+        finally { _importing = false; }
+    }
+}

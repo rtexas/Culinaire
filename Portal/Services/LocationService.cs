@@ -14,7 +14,8 @@ public sealed class LocationService
     public async Task<List<Location>> GetAllAsync(CancellationToken ct = default)
     {
         const string sql = """
-            SELECT [LocationID],[Code],[Name],[Description],[SegmentNumber],[IsActive],[CreatedAt]
+            SELECT [LocationID],[Code],[Name],[Description],[SegmentNumber],[IsActive],[CreatedAt],
+                   ISNULL([Address1],''), ISNULL([Address2],''), ISNULL([City],''), ISNULL([State],''), ISNULL([Zip],'')
             FROM   [dbo].[Locations]
             ORDER  BY [Code];
             """;
@@ -28,12 +29,31 @@ public sealed class LocationService
         return list;
     }
 
+    public async Task<Location?> GetByIdAsync(int locationId, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT [LocationID],[Code],[Name],[Description],[SegmentNumber],[IsActive],[CreatedAt],
+                   ISNULL([Address1],''), ISNULL([Address2],''), ISNULL([City],''), ISNULL([State],''), ISNULL([Zip],'')
+            FROM   [dbo].[Locations]
+            WHERE  [LocationID] = @ID;
+            """;
+        await using var conn = new SqlConnection(_cs);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@ID", locationId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+            return Map(reader);
+        return null;
+    }
+
     public async Task<List<Location>> GetForUserAsync(int userId, string roleType, CancellationToken ct = default)
     {
         if (roleType == "Administrator") return await GetAllAsync(ct);
 
         const string sql = """
-            SELECT l.[LocationID], l.[Code], l.[Name], l.[Description], l.[SegmentNumber], l.[IsActive], l.[CreatedAt]
+            SELECT l.[LocationID], l.[Code], l.[Name], l.[Description], l.[SegmentNumber], l.[IsActive], l.[CreatedAt],
+                   ISNULL(l.[Address1],''), ISNULL(l.[Address2],''), ISNULL(l.[City],''), ISNULL(l.[State],''), ISNULL(l.[Zip],'')
             FROM   [dbo].[Locations]      l
             JOIN   [dbo].[UserLocations]  ul ON ul.[LocationID] = l.[LocationID]
             WHERE  ul.[UserID] = @UserID AND l.[IsActive] = 1
@@ -53,17 +73,22 @@ public sealed class LocationService
     public async Task<int> CreateAsync(Location item, CancellationToken ct = default)
     {
         const string sql = """
-            INSERT INTO [dbo].[Locations]([Code],[Name],[Description],[SegmentNumber])
+            INSERT INTO [dbo].[Locations]([Code],[Name],[Description],[SegmentNumber],[Address1],[Address2],[City],[State],[Zip])
             OUTPUT INSERTED.[LocationID]
-            VALUES(@Code,@Name,@Desc,@Seg);
+            VALUES(@Code,@Name,@Desc,@Seg,@Addr1,@Addr2,@City,@State,@Zip);
             """;
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@Code", item.Code.Trim().ToUpperInvariant());
-        cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Seg",  item.SegmentNumber);
+        cmd.Parameters.AddWithValue("@Code",  item.Code.Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@Name",  item.Name.Trim());
+        cmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Seg",   item.SegmentNumber);
+        cmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(item.Address1) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(item.Address2) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(item.City)     ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(item.State)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(item.Zip)      ?? DBNull.Value);
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
@@ -71,17 +96,23 @@ public sealed class LocationService
     {
         const string sql = """
             UPDATE [dbo].[Locations]
-            SET [Code]=@Code, [Name]=@Name, [Description]=@Desc, [SegmentNumber]=@Seg
+            SET [Code]=@Code,[Name]=@Name,[Description]=@Desc,[SegmentNumber]=@Seg,
+                [Address1]=@Addr1,[Address2]=@Addr2,[City]=@City,[State]=@State,[Zip]=@Zip
             WHERE [LocationID]=@ID;
             """;
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@ID",   item.LocationID);
-        cmd.Parameters.AddWithValue("@Code", item.Code.Trim().ToUpperInvariant());
-        cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Seg",  item.SegmentNumber);
+        cmd.Parameters.AddWithValue("@ID",    item.LocationID);
+        cmd.Parameters.AddWithValue("@Code",  item.Code.Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@Name",  item.Name.Trim());
+        cmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Seg",   item.SegmentNumber);
+        cmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(item.Address1) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(item.Address2) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(item.City)     ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(item.State)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(item.Zip)      ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -169,7 +200,12 @@ public sealed class LocationService
         {
             string Get(string key) => headers.TryGetValue(key, out var col) ? ws.Cell(row, col).GetString().Trim() : string.Empty;
             int    seg = int.TryParse(Get("Segment Number"), out var s) ? s : 0;
-            try   { await UpsertRowAsync(Get("Code"), Get("Name"), Get("Description"), seg, result, ct); }
+            try
+            {
+                await UpsertRowAsync(Get("Code"), Get("Name"), Get("Description"), seg,
+                    Get("Address1"), Get("Address2"), Get("City"), Get("State"), Get("Zip"),
+                    result, ct);
+            }
             catch (Exception ex) { result.Errors.Add($"Row {row}: {ex.Message}"); result.RowsSkipped++; }
         }
         return result;
@@ -197,13 +233,20 @@ public sealed class LocationService
             var cols = ParseLine(line, delimiter);
             string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
             int    seg = int.TryParse(Get("Segment Number"), out var s) ? s : 0;
-            try   { await UpsertRowAsync(Get("Code"), Get("Name"), Get("Description"), seg, result, ct); }
+            try
+            {
+                await UpsertRowAsync(Get("Code"), Get("Name"), Get("Description"), seg,
+                    Get("Address1"), Get("Address2"), Get("City"), Get("State"), Get("Zip"),
+                    result, ct);
+            }
             catch (Exception ex) { result.Errors.Add($"Line {lineNum}: {ex.Message}"); result.RowsSkipped++; }
         }
         return result;
     }
 
-    private async Task UpsertRowAsync(string code, string name, string description, int segmentNumber, ImportResult result, CancellationToken ct)
+    private async Task UpsertRowAsync(string code, string name, string description, int segmentNumber,
+        string address1, string address2, string city, string state, string zip,
+        ImportResult result, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(name)) { result.RowsSkipped++; return; }
 
@@ -219,23 +262,41 @@ public sealed class LocationService
 
         if (existing is int existingId)
         {
-            const string upd = "UPDATE [dbo].[Locations] SET [Name]=@Name,[Description]=@Desc,[SegmentNumber]=@Seg WHERE [LocationID]=@ID;";
+            const string upd = """
+                UPDATE [dbo].[Locations]
+                SET [Name]=@Name,[Description]=@Desc,[SegmentNumber]=@Seg,
+                    [Address1]=@Addr1,[Address2]=@Addr2,[City]=@City,[State]=@State,[Zip]=@Zip
+                WHERE [LocationID]=@ID;
+                """;
             await using var updCmd = new SqlCommand(upd, conn);
-            updCmd.Parameters.AddWithValue("@ID",   existingId);
-            updCmd.Parameters.AddWithValue("@Name", name);
-            updCmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(description) ?? DBNull.Value);
-            updCmd.Parameters.AddWithValue("@Seg",  segmentNumber);
+            updCmd.Parameters.AddWithValue("@ID",    existingId);
+            updCmd.Parameters.AddWithValue("@Name",  name);
+            updCmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Seg",   segmentNumber);
+            updCmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(address1) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(address2) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(city)     ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(state)    ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(zip)      ?? DBNull.Value);
             await updCmd.ExecuteNonQueryAsync(ct);
             result.AccountsUpdated++;
         }
         else
         {
-            const string ins = "INSERT INTO [dbo].[Locations]([Code],[Name],[Description],[SegmentNumber]) VALUES(@Code,@Name,@Desc,@Seg);";
+            const string ins = """
+                INSERT INTO [dbo].[Locations]([Code],[Name],[Description],[SegmentNumber],[Address1],[Address2],[City],[State],[Zip])
+                VALUES(@Code,@Name,@Desc,@Seg,@Addr1,@Addr2,@City,@State,@Zip);
+                """;
             await using var insCmd = new SqlCommand(ins, conn);
-            insCmd.Parameters.AddWithValue("@Code", code);
-            insCmd.Parameters.AddWithValue("@Name", name);
-            insCmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(description) ?? DBNull.Value);
-            insCmd.Parameters.AddWithValue("@Seg",  segmentNumber);
+            insCmd.Parameters.AddWithValue("@Code",  code);
+            insCmd.Parameters.AddWithValue("@Name",  name);
+            insCmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Seg",   segmentNumber);
+            insCmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(address1) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(address2) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(city)     ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(state)    ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(zip)      ?? DBNull.Value);
             await insCmd.ExecuteNonQueryAsync(ct);
             result.AccountsCreated++;
         }
@@ -274,5 +335,10 @@ public sealed class LocationService
         SegmentNumber = r.GetInt32(4),
         IsActive      = r.GetBoolean(5),
         CreatedAt     = r.GetDateTime(6),
+        Address1      = r.IsDBNull(7)  ? string.Empty : r.GetString(7),
+        Address2      = r.IsDBNull(8)  ? string.Empty : r.GetString(8),
+        City          = r.IsDBNull(9)  ? string.Empty : r.GetString(9),
+        State         = r.IsDBNull(10) ? string.Empty : r.GetString(10),
+        Zip           = r.IsDBNull(11) ? string.Empty : r.GetString(11),
     };
 }

@@ -148,8 +148,8 @@
 
     <!-- ── Vendor Table ────────────────────────────────────────────────────── -->
     <div class="table-card">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
-            @_vendors.Count vendor(s)
+        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_vendors.Count vendor(s)</span>
         </div>
         @if (_vendors.Count == 0)
         {
@@ -168,9 +168,22 @@
                         <th>Payables Account</th>
                         <th style="width:120px;text-align:center;">Actions</th>
                     </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fCode" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fCity" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fState" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fCountry" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fPayables" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
-                    @foreach (var v in _vendors)
+                    @if (Filtered.Count == 0 && _vendors.Count > 0)
+                    {
+                        <tr><td colspan="7" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var v in Filtered)
                     {
                         <tr @key="v.VendorID">
                             <td><code style="font-size:.85rem;">@v.VendorCode</code></td>
@@ -208,6 +221,9 @@
 @code {
     // ── Data ──────────────────────────────────────────────────────────────────
     private List<Portal.Models.Vendor>          _vendors  = [];
+    private string _fCode = string.Empty; private string _fName = string.Empty; private string _fCity = string.Empty; private string _fState = string.Empty; private string _fCountry = string.Empty; private string _fPayables = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.Vendor> Filtered => _vendors.Where(x => Mtch(x.VendorCode,_fCode) && Mtch(x.Name,_fName) && Mtch(x.City,_fCity) && Mtch(x.StateCode,_fState) && Mtch(x.CountryCode,_fCountry) && Mtch(x.PayablesAccount,_fPayables)).ToList();
     private List<Portal.Models.StateRegion>     _states   = [];
     private List<Portal.Models.Country>         _countries= [];
     private List<Portal.Models.ChartOfAccount>  _accounts = [];

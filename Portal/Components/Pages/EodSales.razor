@@ -1,0 +1,451 @@
+@page "/portal/eod-sales"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
+@inject LocationSessionService LocationSession
+@inject EodSalesService         SalesSvc
+@inject PermissionService       PermissionSvc
+@inject NavigationManager       Nav
+
+<PageTitle>EOD Sales — Culinaire Portal</PageTitle>
+
+<div class="portal-page">
+    <div class="module-header">
+        <h1 class="page-heading">EOD Sales</h1>
+        @if (LocationSession.HasLocation)
+        {
+            <span style="font-size:13px;color:var(--color-text-muted);">
+                @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+            </span>
+        }
+    </div>
+
+    @if (!LocationSession.HasLocation)
+    {
+        <div class="alert alert-info" style="max-width:560px;">
+            No location selected. <a href="/portal">Return to Dashboard</a> and select a location first.
+        </div>
+    }
+    else if (_level == "None")
+    {
+        <div class="alert alert-error">You do not have access to EOD Sales.</div>
+    }
+    else if (!_showForm)
+    {
+        <!-- ── Landing ────────────────────────────────────────────────────────── -->
+        @if (PermissionService.CanWrite(_level))
+        {
+            <div style="margin-bottom:24px;">
+                <button class="btn-primary" @onclick="StartNewEntry">+ New EOD Sales Entry</button>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_saveMessage))
+        {
+            <div class="alert @(_saveError ? "alert-error" : "alert-success")" style="max-width:560px;margin-bottom:16px;">@_saveMessage</div>
+        }
+    }
+    else
+    {
+        <!-- ── Entry form ──────────────────────────────────────────────────────── -->
+        <div style="margin-bottom:16px;">
+            <button class="btn-secondary" @onclick="ExitForm">← Back to List</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-error" style="max-width:560px;margin-bottom:12px;">@_errorMessage</div>
+        }
+
+        <!-- ── Date selector ─────────────────────────────────────────────────── -->
+        <div class="form-card" style="margin-bottom:24px;max-width:560px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:flex-end;">
+                <div class="form-row" style="margin:0;">
+                    <label>Location</label>
+                    <div style="padding:5px 8px;border:1px solid var(--color-border);border-radius:4px;
+                                background:var(--color-bg-page);font-size:14px;">
+                        @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+                    </div>
+                </div>
+                <div class="form-row" style="margin:0;">
+                    <label>Date</label>
+                    <input type="date" @bind="_entryDate" @bind:after="OnDateChangedAsync" />
+                </div>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <p style="color:var(--color-text-muted);">Loading…</p>
+        }
+        else if (_grid is not null)
+        {
+            <!-- ── Save / Submit / Void bar ───────────────────────────────────── -->
+            @if (_grid.Entry.IsVoided)
+            {
+                <div class="alert alert-error" style="margin-bottom:16px;">
+                    Voided @(_grid.Entry.VoidedAt?.ToString("MM/dd/yyyy h:mm tt") ?? "") — read only.
+                </div>
+            }
+            else if (_grid.Entry.IsSubmitted)
+            {
+                <div class="alert alert-info" style="margin-bottom:16px;">
+                    Submitted @(_grid.Entry.SubmittedAt?.ToString("MM/dd/yyyy h:mm tt") ?? "") — read only.
+                </div>
+            }
+            else if (PermissionService.CanWrite(_level))
+            {
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                    <button class="btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                        @(_saving ? "Saving…" : "Save")
+                    </button>
+                    <button class="btn-danger"  @onclick="() => BeginConfirm(_grid.Entry.EntryID, false)" disabled="@_saving">Void</button>
+                    <button class="btn-primary" @onclick="() => BeginConfirm(_grid.Entry.EntryID, true)"  disabled="@_saving">Submit</button>
+                    @if (!string.IsNullOrEmpty(_saveMessage))
+                    {
+                        <span class="@(_saveError ? "text-danger" : "text-success")" style="font-size:13px;">@_saveMessage</span>
+                    }
+                </div>
+            }
+
+            <!-- ── Grid ──────────────────────────────────────────────────────── -->
+            <div style="overflow-x:auto;">
+                <table class="data-table eod-sales-grid">
+                    <thead>
+                        <tr>
+                            <th class="eod-row-label">Row</th>
+                            @foreach (var col in _grid.Layout.Columns)
+                            { <th class="eod-col-header">@col.ColumnName</th> }
+                            <th class="eod-col-total">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sec in _grid.Sections)
+                        {
+                            <tr class="eod-section-header">
+                                <td class="eod-row-label eod-section-label">
+                                    @sec.SectionName
+                                    <span style="font-weight:400;font-size:11px;margin-left:6px;">(×@(sec.Multiplier >= 0 ? "+" : "")@sec.Multiplier)</span>
+                                </td>
+                                @foreach (var col in _grid.Layout.Columns)
+                                { <td class="eod-subtotal-cell">@SectionColumnTotal(sec, col.ColumnID).ToString("N2")</td> }
+                                <td class="eod-subtotal-total">@SectionTotal(sec).ToString("N2")</td>
+                            </tr>
+
+                            @foreach (var row in sec.Rows)
+                            {
+                                <tr @key="row.RowID">
+                                    <td class="eod-row-label">@row.RowName</td>
+                                    @foreach (var col in _grid.Layout.Columns)
+                                    {
+                                        var key = (row.RowID, col.ColumnID);
+                                        <td class="eod-cell">
+                                            @if (_grid.Entry.IsSubmitted || _grid.Entry.IsVoided)
+                                            { <span class="eod-amount-ro">@_values.GetValueOrDefault(key, 0m).ToString("N2")</span> }
+                                            else
+                                            {
+                                                <input type="number" step="0.01" class="eod-amount-input"
+                                                       value="@_values.GetValueOrDefault(key, 0m)"
+                                                       @onchange="e => SetValue(key, e.Value?.ToString())"
+                                                       onfocus="this.select()"
+                                                       onkeydown="if(event.key==='Enter'){event.preventDefault();var all=document.querySelectorAll('.eod-amount-input');var cols=@(_grid!.Layout.Columns.Count);var total=all.length;var i=Array.from(all).indexOf(this);var ni=i+cols;if(ni>=total){var nc=(i%cols)+1;ni=(nc<cols)?nc:-1;}if(ni>=0&&ni<total){all[ni].focus();all[ni].select();}}" />
+                                            }
+                                        </td>
+                                    }
+                                    <td class="eod-row-total">@RowTotal(row.RowID, sec.Multiplier).ToString("N2")</td>
+                                </tr>
+                            }
+                        }
+
+                        <tr class="eod-column-totals-row">
+                            <td class="eod-row-label eod-col-total-label"
+                                style="background:var(--color-footer-bg);color:var(--color-footer-txt);">Grand Total</td>
+                            @foreach (var col in _grid.Layout.Columns)
+                            {
+                                <td class="eod-col-total-cell"
+                                    style="background:var(--color-footer-bg);color:var(--color-footer-txt);">
+                                    @ColumnTotal(col.ColumnID).ToString("N2")
+                                </td>
+                            }
+                            <td class="eod-grand-total"
+                                style="background:var(--color-footer-bg);color:var(--color-footer-txt);">
+                                @GrandTotal().ToString("N2")
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    <!-- ── Recent Transactions (always visible when not in form) ─────────────── -->
+    @if (LocationSession.HasLocation && _level != "None" && _recentEntries.Count > 0)
+    {
+        <div style="max-width:700px;margin-top:32px;">
+            <h2 class="form-section-title">Recent Transactions</h2>
+
+            @if (_selectedEntry is not null)
+            {
+                <div class="check-selected-panel">
+                    <div style="flex:1;">
+                        <strong>@_selectedEntry.EntryDate.ToString("MM/dd/yyyy")</strong>
+                        &nbsp;—&nbsp;
+                        <span class="status-badge status-@_selectedEntry.Status.ToLowerInvariant()">@_selectedEntry.Status</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        @if (_selectedEntry.Status == "Saved" && PermissionService.CanWrite(_level))
+                        {
+                            @if (PermissionService.CanEdit(_level))
+                            {
+                                <button class="btn-primary check-action-btn"
+                                        @onclick="() => LoadEntryDateAsync(_selectedEntry)">Edit</button>
+                            }
+                            <button class="btn-danger  check-action-btn"
+                                    @onclick="() => BeginConfirm(_selectedEntry.EntryID, false)">Void</button>
+                            <button class="btn-primary check-action-btn"
+                                    @onclick="() => BeginConfirm(_selectedEntry.EntryID, true)">Submit</button>
+                        }
+                        <button class="btn-sm check-action-btn" @onclick="() => _selectedEntry = null">Exit</button>
+                    </div>
+                </div>
+            }
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th style="width:90px;">Status</th>
+                        <th style="width:160px;color:var(--color-text-muted);font-size:11px;">Submitted / Voided</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in _recentEntries)
+                    {
+                        var isSel = _selectedEntry?.EntryID == e.EntryID;
+                        <tr @key="e.EntryID"
+                            class="@(isSel ? "check-row-selected" : "") @(e.IsVoided ? "check-row-voided" : "")"
+                            style="cursor:pointer;" @onclick="() => SelectEntry(e)">
+                            <td>@DateOnly.FromDateTime(e.EntryDate).ToString("MM/dd/yyyy")</td>
+                            <td><span class="status-badge status-@e.Status.ToLowerInvariant()">@e.Status</span></td>
+                            <td style="font-size:11px;color:var(--color-text-muted);">
+                                @if (e.IsSubmitted) { @($"Submitted {e.SubmittedAt?.ToString("MM/dd/yyyy")}") }
+                                else if (e.IsVoided) { @($"Voided {e.VoidedAt?.ToString("MM/dd/yyyy")}") }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (LocationSession.HasLocation && _level != "None" && !_showForm)
+    {
+        <p style="color:var(--color-text-muted);">No entries recorded yet. Click <strong>+ New EOD Sales Entry</strong> to create one.</p>
+    }
+</div>
+
+<!-- ── Submit confirm modal ─────────────────────────────────────────────────── -->
+@if (_confirmIsSubmit && _confirmEntryId > 0)
+{
+    <div class="modal-backdrop" @onclick="CancelConfirm">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Submit EOD Sales Entry</h3>
+            <p>Submit the entry for <strong>@_confirmDateLabel</strong>? Once submitted it becomes read-only.</p>
+            <div class="form-actions">
+                <button class="btn-primary"   @onclick="DoSubmitAsync">Submit</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ── Void confirm modal ────────────────────────────────────────────────────── -->
+@if (!_confirmIsSubmit && _confirmEntryId > 0)
+{
+    <div class="modal-backdrop" @onclick="CancelConfirm">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Void EOD Sales Entry</h3>
+            <p>Void the entry for <strong>@_confirmDateLabel</strong>? This cannot be undone.</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DoVoidAsync">Void Entry</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private string _level = "None";
+    private bool     _showForm;
+    private DateOnly _entryDate   = DateOnly.FromDateTime(DateTime.Today);
+    private bool     _loading;
+    private string   _errorMessage = string.Empty;
+    private Portal.Models.EodSalesGrid? _grid;
+    private Dictionary<(int RowID, int ColumnID), decimal> _values = [];
+    private bool   _saving;
+    private string _saveMessage = string.Empty;
+    private bool   _saveError;
+
+    private List<Portal.Models.EodSalesEntry>  _recentEntries = [];
+    private Portal.Models.EodSalesEntry?       _selectedEntry;
+
+    // unified confirm state
+    private int    _confirmEntryId  = 0;
+    private bool   _confirmIsSubmit;
+    private string _confirmDateLabel = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!LocationSession.HasLocation) return;
+
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var uid  = int.Parse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            var role = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "User";
+            _level = await PermissionSvc.GetLevelAsync(uid, role, "EodSales");
+        }
+        if (_level == "None") return;
+
+        _recentEntries = await SalesSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+    }
+
+    private async Task StartNewEntry()
+    {
+        // Default to last entry date + 1, else today
+        _entryDate = _recentEntries.Count > 0
+            ? DateOnly.FromDateTime(_recentEntries.Max(e => e.EntryDate).AddDays(1))
+            : DateOnly.FromDateTime(DateTime.Today);
+        _showForm     = true;
+        _grid         = null;
+        _values       = [];
+        _errorMessage = string.Empty;
+        _saveMessage  = string.Empty;
+        await LoadGridAsync();
+    }
+
+    private void ExitForm()
+    {
+        _showForm      = false;
+        _grid          = null;
+        _values        = [];
+        _saveMessage   = string.Empty;
+        _confirmEntryId = 0;
+    }
+
+    private async Task OnDateChangedAsync() => await LoadGridAsync();
+
+    private async Task LoadGridAsync()
+    {
+        _loading = true; _errorMessage = string.Empty; _saveMessage = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var (grid, error) = await SalesSvc.GetOrCreateAsync(_entryDate, LocationSession.SelectedLocationID);
+            if (error is not null) { _errorMessage = error; _grid = null; }
+            else
+            {
+                _grid   = grid!;
+                _values = new Dictionary<(int, int), decimal>(_grid.Values);
+            }
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; _grid = null; }
+        finally { _loading = false; }
+    }
+
+    private void SetValue((int RowID, int ColumnID) key, string? raw)
+        => _values[key] = decimal.TryParse(raw, out var v) ? v : 0m;
+
+    // ── Totals ─────────────────────────────────────────────────────────────────
+
+    private decimal RowTotal(int rowID, int multiplier)
+    {
+        if (_grid is null) return 0m;
+        return _grid.Layout.Columns.Sum(col => _values.GetValueOrDefault((rowID, col.ColumnID), 0m)) * multiplier;
+    }
+
+    private decimal SectionColumnTotal(Portal.Models.EodSalesGridSection sec, int columnID) =>
+        sec.Rows.Sum(r => _values.GetValueOrDefault((r.RowID, columnID), 0m) * sec.Multiplier);
+
+    private decimal SectionTotal(Portal.Models.EodSalesGridSection sec) =>
+        sec.Rows.Sum(r => _grid!.Layout.Columns.Sum(c => _values.GetValueOrDefault((r.RowID, c.ColumnID), 0m)) * sec.Multiplier);
+
+    private decimal ColumnTotal(int columnID)
+    {
+        if (_grid is null) return 0m;
+        return _grid.Sections.Sum(sec => sec.Rows.Sum(r => _values.GetValueOrDefault((r.RowID, columnID), 0m) * sec.Multiplier));
+    }
+
+    private decimal GrandTotal()
+    {
+        if (_grid is null) return 0m;
+        return _grid.Sections.Sum(sec =>
+            sec.Rows.Sum(r => _grid.Layout.Columns.Sum(c => _values.GetValueOrDefault((r.RowID, c.ColumnID), 0m)) * sec.Multiplier));
+    }
+
+    // ── Save ───────────────────────────────────────────────────────────────────
+
+    private async Task SaveAsync()
+    {
+        if (_grid is null) return;
+        _saving = true; _saveMessage = string.Empty;
+        try
+        {
+            var valueTuples = _values.Select(kv => (kv.Key.RowID, kv.Key.ColumnID, kv.Value));
+            await SalesSvc.SaveValuesAsync(_grid.Entry.EntryID, valueTuples);
+            _saveMessage   = $"Saved at {DateTime.Now:h:mm tt}."; _saveError = false;
+            _recentEntries = await SalesSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+        }
+        catch (Exception ex) { _saveMessage = ex.Message; _saveError = true; }
+        finally { _saving = false; }
+    }
+
+    // ── Confirm (Submit / Void) ────────────────────────────────────────────────
+
+    private void BeginConfirm(int entryId, bool isSubmit)
+    {
+        _confirmEntryId  = entryId;
+        _confirmIsSubmit = isSubmit;
+        // Determine label for modal text
+        if (_showForm && _grid is not null && _grid.Entry.EntryID == entryId)
+            _confirmDateLabel = _entryDate.ToString("MM/dd/yyyy");
+        else
+        {
+            var e = _recentEntries.FirstOrDefault(x => x.EntryID == entryId);
+            _confirmDateLabel = e is not null ? DateOnly.FromDateTime(e.EntryDate).ToString("MM/dd/yyyy") : string.Empty;
+        }
+    }
+
+    private void CancelConfirm() => _confirmEntryId = 0;
+
+    private async Task DoSubmitAsync()
+    {
+        await SalesSvc.SubmitAsync(_confirmEntryId);
+        _confirmEntryId = 0;
+        _recentEntries  = await SalesSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+        _selectedEntry  = null;
+        if (_showForm) { await LoadGridAsync(); ExitForm(); }
+    }
+
+    private async Task DoVoidAsync()
+    {
+        await SalesSvc.VoidAsync(_confirmEntryId);
+        _confirmEntryId = 0;
+        _recentEntries  = await SalesSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+        _selectedEntry  = null;
+        if (_showForm) ExitForm();
+    }
+
+    // ── Recent list ────────────────────────────────────────────────────────────
+
+    private void SelectEntry(Portal.Models.EodSalesEntry e)
+        => _selectedEntry = _selectedEntry?.EntryID == e.EntryID ? null : e;
+
+    private async Task LoadEntryDateAsync(Portal.Models.EodSalesEntry e)
+    {
+        _entryDate     = DateOnly.FromDateTime(e.EntryDate);
+        _selectedEntry = null;
+        _showForm      = true;
+        await LoadGridAsync();
+    }
+}

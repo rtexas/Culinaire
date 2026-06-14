@@ -1,0 +1,280 @@
+@page "/portal/admin/batch-setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject LocationService       LocationSvc
+@inject PayrollBatchService   BatchSvc
+
+<PageTitle>Payroll Batch Setup — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Payroll Batch Setup</h1>
+    </div>
+    <p class="page-sub">Define payroll batch templates for each location. Batch names support keywords that are substituted when a batch is processed.</p>
+
+    <!-- ── Location selector ────────────────────────────────────────────────── -->
+    <div class="form-card" style="max-width:420px;margin-bottom:24px;">
+        <div class="form-row">
+            <label>Location</label>
+            <select @bind="_locationId" @bind:after="OnLocationChangedAsync">
+                <option value="0">— Select location —</option>
+                @foreach (var loc in _locations)
+                {
+                    <option value="@loc.LocationID">@loc.Code — @loc.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (_locationId > 0)
+    {
+        <!-- ── Add / Edit form ──────────────────────────────────────────────── -->
+        <div class="form-card" style="max-width:680px;margin-bottom:24px;">
+            <h2 class="form-section-title">@(_editId == 0 ? "Add Batch" : "Edit Batch")</h2>
+
+            @if (!string.IsNullOrEmpty(_msg))
+            {
+                <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:12px;">@_msg</div>
+            }
+
+            <div class="form-row">
+                <label>
+                    Batch Name Template <span class="required">*</span>
+                    <span style="font-size:11px;color:var(--color-text-muted);font-weight:normal;margin-left:6px;">
+                        — click a keyword to insert it at the cursor
+                    </span>
+                </label>
+                <input type="text" @ref="_templateRef" @bind="_template" @bind:event="oninput"
+                       maxlength="500" placeholder="e.g. {Location} Payroll {FromPayPeriod} to {ToPayPeriod}" />
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                    @foreach (var kw in _keywords)
+                    {
+                        <button type="button" class="btn-sm btn-secondary"
+                                style="font-size:11px;font-family:monospace;"
+                                @onclick="() => InsertKeyword(kw)">
+                            @kw
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="form-row" style="max-width:300px;">
+                <label>Pay Period Length <span class="required">*</span></label>
+                <select @bind="_payPeriodLength" @bind:after="OnPeriodChanged">
+                    <option value="">— Select —</option>
+                    @foreach (var opt in _periodOptions)
+                    {
+                        <option value="@opt">@opt</option>
+                    }
+                </select>
+            </div>
+
+            @if (_showStartDay)
+            {
+                <div class="form-row" style="max-width:240px;">
+                    <label>
+                        Start Day of Week <span class="required">*</span>
+                        <span style="font-size:11px;color:var(--color-text-muted);font-weight:normal;margin-left:6px;">
+                            — @(_payPeriodLength == "Weekly" ? "pay week begins on this day" : "first pay period of each cycle begins on this day")
+                        </span>
+                    </label>
+                    <select @bind="_startDay">
+                        <option value="">— Select day —</option>
+                        @foreach (var d in _daysOfWeek)
+                        {
+                            <option value="@d">@d</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            <div class="form-row" style="max-width:180px;">
+                <label>Active</label>
+                <input type="checkbox" @bind="_isActive" style="width:auto;" />
+            </div>
+
+            <div class="form-actions">
+                <button class="btn-primary" @onclick="SaveAsync"
+                        disabled="@(!CanSave)">
+                    @(_editId == 0 ? "Add Batch" : "Save Changes")
+                </button>
+                @if (_editId != 0)
+                {
+                    <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+                }
+            </div>
+        </div>
+
+        <!-- ── Batch list ────────────────────────────────────────────────────── -->
+        <div class="table-card">
+            <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);">
+                <span style="font-size:13px;color:var(--color-text-muted);">@_batches.Count batch(es) for this location</span>
+            </div>
+            @if (_batches.Count == 0)
+            {
+                <p style="padding:16px;color:var(--color-text-muted);">No batches defined for this location. Add one above.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Batch Name Template</th>
+                            <th style="width:180px;">Pay Period</th>
+                            <th style="width:130px;">Start Day</th>
+                            <th style="width:60px;text-align:center;">Active</th>
+                            <th style="width:110px;text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var b in _batches)
+                        {
+                            <tr @key="b.BatchID">
+                                <td style="font-family:monospace;font-size:.85rem;">@b.BatchNameTemplate</td>
+                                <td>@b.PayPeriodLength</td>
+                                <td style="color:var(--color-text-muted);font-size:.85rem;">
+                                    @(b.StartDayOfWeek ?? "—")
+                                </td>
+                                <td style="text-align:center;">
+                                    @if (b.IsActive) { <span style="color:var(--color-primary);">✓</span> }
+                                    else             { <span style="color:var(--color-text-muted);">—</span> }
+                                </td>
+                                <td style="text-align:center;white-space:nowrap;">
+                                    <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(b)">Edit</button>
+                                    <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(b)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Batch</h3>
+            <p>Permanently delete batch <strong>@_deleteTarget.BatchNameTemplate</strong>?</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] _keywords =
+        ["{Location}", "{Department}", "{FromPayPeriod}", "{ToPayPeriod}"];
+
+    private static readonly string[] _periodOptions =
+        ["Monthly", "1st and 15th", "Every Two Weeks", "Weekly", "Daily"];
+
+    private static readonly string[] _daysOfWeek =
+        ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    private List<Portal.Models.Location>     _locations = [];
+    private List<Portal.Models.PayrollBatch> _batches   = [];
+    private PayrollBatch? _deleteTarget;
+
+    private int     _locationId     = 0;
+    private int     _editId         = 0;
+    private string  _template       = string.Empty;
+    private string  _payPeriodLength = string.Empty;
+    private string  _startDay       = string.Empty;
+    private bool    _isActive       = true;
+    private string  _msg            = string.Empty;
+    private bool    _isError;
+
+    private bool _showStartDay => _payPeriodLength is "Every Two Weeks" or "Weekly";
+    private bool CanSave => !string.IsNullOrWhiteSpace(_template)
+                         && !string.IsNullOrWhiteSpace(_payPeriodLength)
+                         && (!_showStartDay || !string.IsNullOrWhiteSpace(_startDay));
+
+    private ElementReference _templateRef;
+
+    protected override async Task OnInitializedAsync()
+        => _locations = await LocationSvc.GetAllAsync();
+
+    private async Task OnLocationChangedAsync()
+    {
+        CancelEdit();
+        _batches = _locationId > 0
+            ? await BatchSvc.GetForLocationAsync(_locationId)
+            : [];
+    }
+
+    private void OnPeriodChanged()
+    {
+        if (!_showStartDay) _startDay = string.Empty;
+    }
+
+    private void InsertKeyword(string kw)
+    {
+        _template += kw;
+    }
+
+    private void BeginEdit(PayrollBatch b)
+    {
+        _editId          = b.BatchID;
+        _template        = b.BatchNameTemplate;
+        _payPeriodLength = b.PayPeriodLength;
+        _startDay        = b.StartDayOfWeek ?? string.Empty;
+        _isActive        = b.IsActive;
+        _msg             = string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        _editId          = 0;
+        _template        = string.Empty;
+        _payPeriodLength = string.Empty;
+        _startDay        = string.Empty;
+        _isActive        = true;
+        _msg             = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        var batch = new PayrollBatch
+        {
+            BatchID           = _editId,
+            LocationID        = _locationId,
+            BatchNameTemplate = _template.Trim(),
+            PayPeriodLength   = _payPeriodLength,
+            StartDayOfWeek    = _showStartDay ? _startDay : null,
+            IsActive          = _isActive,
+        };
+        try
+        {
+            if (_editId == 0)
+                await BatchSvc.CreateAsync(batch);
+            else
+                await BatchSvc.UpdateAsync(batch);
+
+            _msg     = _editId == 0 ? "Batch added." : "Batch updated.";
+            _isError = false;
+            CancelEdit();
+            _batches = await BatchSvc.GetForLocationAsync(_locationId);
+        }
+        catch (Exception ex)
+        {
+            _msg = ex.Message; _isError = true;
+        }
+    }
+
+    private void ConfirmDelete(PayrollBatch b) => _deleteTarget = b;
+    private void CancelDelete()               => _deleteTarget = null;
+
+    private async Task DeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        await BatchSvc.DeleteAsync(_deleteTarget.BatchID);
+        _msg     = "Batch deleted.";
+        _isError = false;
+        _deleteTarget = null;
+        _batches = await BatchSvc.GetForLocationAsync(_locationId);
+    }
+}

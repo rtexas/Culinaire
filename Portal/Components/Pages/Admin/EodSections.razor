@@ -1,0 +1,262 @@
+@page "/portal/admin/eod-sections"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject EodSectionService EodSectionService
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>EOD Sales — Sections — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">EOD Sales — Sections</h1>
+    </div>
+    <p class="page-sub">
+        Define sections used on the EOD Sales entry grid. Each section groups rows and applies a
+        multiplier: <strong>1</strong> = add, <strong>−1</strong> = subtract, <strong>0</strong> = neutral / display only.
+    </p>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Sections</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required column: <strong>Name</strong>.
+            Optional: <strong>Description</strong>, <strong>Multiplier</strong> (−1, 0, or 1 — defaults to 1).
+            Existing records matched by Name are updated; new Names are inserted.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="ImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated, updated: @_importResult.AccountsUpdated, skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Add / Edit ─────────────────────────────────────────────────────── -->
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
+    }
+
+    <div class="form-card" style="max-width:620px;margin-bottom:24px;">
+        <h2 class="form-section-title">@(_editId == 0 ? "Add Section" : "Edit Section")</h2>
+        <div class="form-row">
+            <label>Name <span class="required">*</span></label>
+            <input type="text" @bind="_name" @bind:event="oninput" maxlength="200" placeholder="e.g. Revenue" />
+        </div>
+        <div class="form-row">
+            <label>Description</label>
+            <input type="text" @bind="_description" @bind:event="oninput" maxlength="500" placeholder="Optional description" />
+        </div>
+        <div class="form-row" style="max-width:220px;">
+            <label>Multiplier</label>
+            <select @bind="_multiplier">
+                <option value="1">1 — Add</option>
+                <option value="-1">−1 — Subtract</option>
+                <option value="0">0 — Neutral / Display Only</option>
+            </select>
+        </div>
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(_name)">
+                @(_editId == 0 ? "Add" : "Save Changes")
+            </button>
+            @if (_editId != 0)
+            {
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            }
+        </div>
+    </div>
+
+    <!-- ── List ───────────────────────────────────────────────────────────── -->
+    <div class="table-card">
+        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_items.Count record(s)</span>
+        </div>
+        @if (_items.Count == 0)
+        {
+            <p style="padding:16px;color:var(--color-text-muted);">No sections defined yet. Add one above or import a file.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th style="width:130px;text-align:center;">Multiplier</th>
+                        <th style="width:120px;text-align:center;">Actions</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Filtered.Count == 0 && _items.Count > 0)
+                    {
+                        <tr><td colspan="4" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var item in Filtered)
+                    {
+                        <tr @key="item.SectionID">
+                            <td>@item.Name</td>
+                            <td>@item.Description</td>
+                            <td style="text-align:center;">
+                                @{
+                                    var (badge, color) = item.Multiplier switch
+                                    {
+                                        1  => ("+ 1  Add",         "var(--color-primary)"),
+                                        -1 => ("− 1  Subtract",    "#b91c1c"),
+                                        _  => ("0  Neutral",       "var(--color-text-muted)"),
+                                    };
+                                }
+                                <span class="status-badge" style="background:color-mix(in srgb,@color 12%,transparent);color:@color;">
+                                    @badge
+                                </span>
+                            </td>
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(item)">Edit</button>
+                                <button class="btn-sm btn-danger"    @onclick="() => ConfirmDelete(item)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Section</h3>
+            <p>Permanently delete <strong>@_deleteTarget.Name</strong>?</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Portal.Models.EodSection> _items = [];
+    private string _fName = string.Empty; private string _fDesc = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.EodSection> Filtered => _items.Where(x => Mtch(x.Name,_fName) && Mtch(x.Description,_fDesc)).ToList();
+
+    private IBrowserFile?               _importFile;
+    private bool                        _showDelimiter;
+    private string                      _delimiter    = ",";
+    private bool                        _importing;
+    private Portal.Models.ImportResult? _importResult;
+
+    private int    _editId      = 0;
+    private string _name        = string.Empty;
+    private string _description = string.Empty;
+    private int    _multiplier  = 1;
+    private string _message     = string.Empty;
+    private bool   _isError;
+    private Portal.Models.EodSection? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+        => _items = await EodSectionService.GetAllAsync();
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        _showDelimiter = Path.GetExtension(e.File.Name).ToLowerInvariant() is not (".xlsx" or ".xls");
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            char delim = _delimiter is { Length: 1 } d ? d[0] : ',';
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await EodSectionService.ImportAsync(stream, _importFile.Name, delim);
+            _items = await EodSectionService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _importResult = new Portal.Models.ImportResult { Errors = [$"Import failed: {ex.Message}"] };
+        }
+        finally { _importing = false; }
+    }
+
+    private void BeginEdit(Portal.Models.EodSection item)
+    {
+        _editId = item.SectionID; _name = item.Name; _description = item.Description;
+        _multiplier = item.Multiplier; _message = string.Empty;
+    }
+
+    private void CancelEdit() { _editId = 0; _name = string.Empty; _description = string.Empty; _multiplier = 1; }
+
+    private async Task SaveAsync()
+    {
+        var item = new Portal.Models.EodSection
+        {
+            SectionID   = _editId,
+            Name        = _name,
+            Description = _description,
+            Multiplier  = _multiplier,
+        };
+        try
+        {
+            if (_editId == 0) { await EodSectionService.CreateAsync(item); _message = $"Added: {_name}."; }
+            else              { await EodSectionService.UpdateAsync(item); _message = $"Updated: {_name}."; }
+            _isError = false;
+            CancelEdit();
+            _items = await EodSectionService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message.Contains("UNIQUE") ? $"\"{_name}\" already exists." : ex.Message;
+            _isError = true;
+        }
+    }
+
+    private void ConfirmDelete(Portal.Models.EodSection item) => _deleteTarget = item;
+    private void CancelDelete()                                => _deleteTarget = null;
+
+    private async Task DeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        try
+        {
+            await EodSectionService.DeleteAsync(_deleteTarget.SectionID);
+            _message = $"Deleted: {_deleteTarget.Name}."; _isError = false;
+        }
+        catch (Exception ex) { _message = ex.Message; _isError = true; }
+        _deleteTarget = null;
+        _items = await EodSectionService.GetAllAsync();
+    }
+}

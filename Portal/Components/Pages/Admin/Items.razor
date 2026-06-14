@@ -105,8 +105,8 @@
 
     <!-- ── Items Table ────────────────────────────────────────────────────── -->
     <div class="table-card">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border);font-size:13px;color:var(--color-text-muted);">
-            @_items.Count item(s)
+        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_items.Count item(s)</span>
         </div>
         @if (_items.Count == 0)
         {
@@ -123,9 +123,20 @@
                         <th style="width:110px;text-align:right;">Typical Price</th>
                         <th style="width:130px;text-align:center;">Actions</th>
                     </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fCode" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in _items)
+                    @if (Filtered.Count == 0 && _items.Count > 0)
+                    {
+                        <tr><td colspan="5" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var item in Filtered)
                     {
                         <tr @key="item.ItemID">
                             <td><code style="font-size:.85rem;">@item.ItemCode</code></td>
@@ -162,6 +173,9 @@
 
 @code {
     private List<Portal.Models.Item> _items = [];
+    private string _fCode = string.Empty; private string _fName = string.Empty; private string _fDesc = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.Item> Filtered => _items.Where(x => Mtch(x.ItemCode,_fCode) && Mtch(x.ItemName,_fName) && Mtch(x.ItemDescription,_fDesc)).ToList();
 
     // import state
     private IBrowserFile?              _importFile;

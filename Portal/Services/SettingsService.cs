@@ -23,7 +23,12 @@ public sealed class SettingsService
 
     public async Task UpdateAsync(string name, string value, CancellationToken ct = default)
     {
-        const string sql = "UPDATE [dbo].[Settings] SET [Value]=@Value WHERE [Name]=@Name;";
+        const string sql = """
+            IF EXISTS (SELECT 1 FROM [dbo].[Settings] WHERE [Name]=@Name)
+                UPDATE [dbo].[Settings] SET [Value]=@Value WHERE [Name]=@Name;
+            ELSE
+                INSERT INTO [dbo].[Settings] ([Name],[Value],[IsEnabled]) VALUES (@Name,@Value,1);
+            """;
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);

@@ -1,0 +1,282 @@
+@page "/portal/admin/check-setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject LocationService        LocationSvc
+@inject CheckSetupService      SetupSvc
+@inject VendorService          VendorSvc
+@inject ChartOfAccountsService CoaSvc
+
+<PageTitle>Check Setup — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Check Setup</h1>
+    </div>
+    <p class="page-sub">Configure valid vendors and expense accounts available for checks at each location.</p>
+
+    <!-- Location selector -->
+    <div class="form-card" style="max-width:400px;margin-bottom:24px;">
+        <div class="form-row">
+            <label>Location</label>
+            <select @bind="_locationId" @bind:after="OnLocationChangedAsync">
+                <option value="0">— Select location —</option>
+                @foreach (var loc in _locations)
+                {
+                    <option value="@loc.LocationID">@loc.Code — @loc.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (_locationId > 0)
+    {
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:960px;">
+
+            <!-- ── Vendors panel ──────────────────────────────────────────────── -->
+            <div class="form-card">
+                <h2 class="form-section-title">Valid Vendors</h2>
+
+                @{
+                    var availableVendors = _allVendors
+                        .Where(v => !_setupVendors.Any(s => s.VendorID == v.VendorID))
+                        .ToList();
+                }
+
+                @if (availableVendors.Count > 0)
+                {
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:var(--color-text-muted);display:block;margin-bottom:4px;">
+                            Select one or more vendors to add (Ctrl/⌘+click for multiple):
+                        </label>
+                        <select multiple
+                                style="width:100%;height:160px;font-size:13px;border:1px solid var(--color-border);border-radius:4px;padding:4px;"
+                                @onchange="OnVendorSelectionChanged">
+                            @foreach (var v in availableVendors)
+                            {
+                                <option value="@v.VendorID">@v.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                        <button class="btn-primary" @onclick="AddVendorsAsync"
+                                disabled="@(_selectedVendorIds.Count == 0)">
+                            Add @(_selectedVendorIds.Count > 0 ? $"({_selectedVendorIds.Count})" : "")
+                        </button>
+                        @if (_selectedVendorIds.Count > 0)
+                        {
+                            <span style="font-size:12px;color:var(--color-text-muted);">
+                                @_selectedVendorIds.Count selected
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">All vendors have been added.</p>
+                }
+
+                @if (_setupVendors.Count == 0)
+                {
+                    <p style="color:var(--color-text-muted);font-size:13px;">No vendors configured for this location.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>Vendor</th><th style="width:50px;"></th></tr></thead>
+                        <tbody>
+                            @foreach (var v in _setupVendors)
+                            {
+                                <tr @key="v.CheckSetupVendorID">
+                                    <td style="font-size:13px;">@v.VendorName</td>
+                                    <td><button class="btn-sm btn-danger" @onclick="() => RemoveVendorAsync(v.CheckSetupVendorID)">&#x2715;</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+
+                @if (!string.IsNullOrEmpty(_vendorMsg))
+                {
+                    <div class="alert alert-success" style="margin-top:8px;">@_vendorMsg</div>
+                }
+            </div>
+
+            <!-- ── Accounts panel ─────────────────────────────────────────────── -->
+            <div class="form-card">
+                <h2 class="form-section-title">Valid Expense Accounts</h2>
+
+                @{
+                    var availableAccounts = _allAccounts
+                        .Where(a => !_setupAccounts.Any(s => s.AccountID == a.AccountID))
+                        .ToList();
+                }
+
+                @if (availableAccounts.Count > 0)
+                {
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:var(--color-text-muted);display:block;margin-bottom:4px;">
+                            Select one or more accounts to add (Ctrl/⌘+click for multiple):
+                        </label>
+                        <select multiple
+                                style="width:100%;height:160px;font-size:13px;border:1px solid var(--color-border);border-radius:4px;padding:4px;"
+                                @onchange="OnAccountSelectionChanged">
+                            @foreach (var a in availableAccounts)
+                            {
+                                <option value="@a.AccountID">
+                                    @(string.IsNullOrEmpty(a.FullAccountString) ? a.AccountName : $"{a.FullAccountString} — {a.AccountName}")
+                                </option>
+                            }
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                        <button class="btn-primary" @onclick="AddAccountsAsync"
+                                disabled="@(_selectedAccountIds.Count == 0)">
+                            Add @(_selectedAccountIds.Count > 0 ? $"({_selectedAccountIds.Count})" : "")
+                        </button>
+                        @if (_selectedAccountIds.Count > 0)
+                        {
+                            <span style="font-size:12px;color:var(--color-text-muted);">
+                                @_selectedAccountIds.Count selected
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">All accounts have been added.</p>
+                }
+
+                @if (_setupAccounts.Count == 0)
+                {
+                    <p style="color:var(--color-text-muted);font-size:13px;">No expense accounts configured for this location.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>Account</th><th style="width:50px;"></th></tr></thead>
+                        <tbody>
+                            @foreach (var a in _setupAccounts)
+                            {
+                                <tr @key="a.CheckSetupAccountID">
+                                    <td style="font-size:13px;">
+                                        @(string.IsNullOrEmpty(a.FullAccountString)
+                                            ? a.AccountName
+                                            : $"{a.FullAccountString} — {a.AccountName}")
+                                    </td>
+                                    <td><button class="btn-sm btn-danger" @onclick="() => RemoveAccountAsync(a.CheckSetupAccountID)">&#x2715;</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+
+                @if (!string.IsNullOrEmpty(_accountMsg))
+                {
+                    <div class="alert alert-success" style="margin-top:8px;">@_accountMsg</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Portal.Models.Location>       _locations     = [];
+    private List<Portal.Models.Vendor>         _allVendors    = [];
+    private List<Portal.Models.ChartOfAccount> _allAccounts   = [];
+    private List<CheckSetupVendor>             _setupVendors  = [];
+    private List<CheckSetupAccount>            _setupAccounts = [];
+
+    private int             _locationId        = 0;
+    private HashSet<int>    _selectedVendorIds  = [];
+    private HashSet<int>    _selectedAccountIds = [];
+    private string          _vendorMsg         = string.Empty;
+    private string          _accountMsg        = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var locTask = LocationSvc.GetAllAsync();
+        var venTask = VendorSvc.GetAllAsync();
+        await Task.WhenAll(locTask, venTask);
+        _locations  = locTask.Result;
+        _allVendors = venTask.Result;
+    }
+
+    private async Task OnLocationChangedAsync()
+    {
+        _vendorMsg = _accountMsg = string.Empty;
+        _selectedVendorIds.Clear();
+        _selectedAccountIds.Clear();
+        _allAccounts = [];
+        if (_locationId <= 0) { _setupVendors = []; _setupAccounts = []; return; }
+        var loc = _locations.FirstOrDefault(l => l.LocationID == _locationId);
+        if (loc is not null)
+            _allAccounts = await CoaSvc.GetExpenseAccountsForLocationAsync(loc.SegmentNumber, loc.Code);
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        var vt = SetupSvc.GetVendorsAsync(_locationId);
+        var at = SetupSvc.GetAccountsAsync(_locationId);
+        await Task.WhenAll(vt, at);
+        _setupVendors  = vt.Result;
+        _setupAccounts = at.Result;
+        _selectedVendorIds.Clear();
+        _selectedAccountIds.Clear();
+    }
+
+    // ── Multi-select change handlers ──────────────────────────────────────────
+
+    private void OnVendorSelectionChanged(ChangeEventArgs e)
+    {
+        _selectedVendorIds.Clear();
+        if (e.Value is string[] values)
+            foreach (var v in values)
+                if (int.TryParse(v, out var id))
+                    _selectedVendorIds.Add(id);
+    }
+
+    private void OnAccountSelectionChanged(ChangeEventArgs e)
+    {
+        _selectedAccountIds.Clear();
+        if (e.Value is string[] values)
+            foreach (var v in values)
+                if (int.TryParse(v, out var id))
+                    _selectedAccountIds.Add(id);
+    }
+
+    // ── Add / Remove ──────────────────────────────────────────────────────────
+
+    private async Task AddVendorsAsync()
+    {
+        if (_selectedVendorIds.Count == 0) return;
+        foreach (var id in _selectedVendorIds.ToList())
+            await SetupSvc.AddVendorAsync(_locationId, id);
+        int count = _selectedVendorIds.Count;
+        _vendorMsg = count == 1 ? "Vendor added." : $"{count} vendors added.";
+        await RefreshAsync();
+    }
+
+    private async Task RemoveVendorAsync(int id)
+    {
+        await SetupSvc.RemoveVendorAsync(id);
+        _vendorMsg = "Vendor removed.";
+        await RefreshAsync();
+    }
+
+    private async Task AddAccountsAsync()
+    {
+        if (_selectedAccountIds.Count == 0) return;
+        foreach (var id in _selectedAccountIds.ToList())
+            await SetupSvc.AddAccountAsync(_locationId, id);
+        int count = _selectedAccountIds.Count;
+        _accountMsg = count == 1 ? "Account added." : $"{count} accounts added.";
+        await RefreshAsync();
+    }
+
+    private async Task RemoveAccountAsync(int id)
+    {
+        await SetupSvc.RemoveAccountAsync(id);
+        _accountMsg = "Account removed.";
+        await RefreshAsync();
+    }
+}

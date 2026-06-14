@@ -16,6 +16,12 @@
                 </div>
             }
 
+            <a class="nav-item @(IsActive("/portal") ? "active" : "")"
+               href="/portal" @onclick="() => OnNavigate.InvokeAsync()">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Dashboard</span>
+            </a>
+
             @foreach (var item in _navItems)
             {
                 @if (LocationSession.HasLocation)
@@ -48,12 +54,137 @@
                 @if (_setupOpen)
                 {
                     <div class="nav-submenu">
-                        @foreach (var (label, url) in _setupItems)
+                        @* General *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_generalOpen ? "open" : "")"
+                             @onclick="() => _generalOpen = !_generalOpen">
+                            <span class="nav-label">General</span>
+                            <span class="nav-chevron">@(_generalOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_generalOpen)
                         {
-                            <a class="nav-item @(IsActive(url) ? "active" : "")"
-                               href="@url" @onclick="() => OnNavigate.InvokeAsync()">
-                                <span class="nav-label">@label</span>
-                            </a>
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _generalItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* Security *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_securityOpen ? "open" : "")"
+                             @onclick="() => _securityOpen = !_securityOpen">
+                            <span class="nav-label">Security</span>
+                            <span class="nav-chevron">@(_securityOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_securityOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _securityItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* Finance *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_financeOpen ? "open" : "")"
+                             @onclick="() => _financeOpen = !_financeOpen">
+                            <span class="nav-label">Finance</span>
+                            <span class="nav-chevron">@(_financeOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_financeOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _financeItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* EOD Sales *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_eodSetupOpen ? "open" : "")"
+                             @onclick="() => _eodSetupOpen = !_eodSetupOpen">
+                            <span class="nav-label">EOD Sales</span>
+                            <span class="nav-chevron">@(_eodSetupOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_eodSetupOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _eodSetupItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* Items *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_itemsOpen ? "open" : "")"
+                             @onclick="() => _itemsOpen = !_itemsOpen">
+                            <span class="nav-label">Items</span>
+                            <span class="nav-chevron">@(_itemsOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_itemsOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _itemsItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* Payables *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_payablesOpen ? "open" : "")"
+                             @onclick="() => _payablesOpen = !_payablesOpen">
+                            <span class="nav-label">Payables</span>
+                            <span class="nav-chevron">@(_payablesOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_payablesOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _payablesItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @* Payroll *@
+                        <div class="nav-group-toggle nav-subgroup-toggle @(_payrollSetupOpen ? "open" : "")"
+                             @onclick="() => _payrollSetupOpen = !_payrollSetupOpen">
+                            <span class="nav-label">Payroll</span>
+                            <span class="nav-chevron">@(_payrollSetupOpen ? "▴" : "▾")</span>
+                        </div>
+                        @if (_payrollSetupOpen)
+                        {
+                            <div class="nav-submenu nav-submenu-nested">
+                                @foreach (var (label, url) in _payrollSetupItems)
+                                {
+                                    <a class="nav-item @(IsActive(url) ? "active" : "")"
+                                       href="@url" @onclick="() => OnNavigate.InvokeAsync()">
+                                        <span class="nav-label">@label</span>
+                                    </a>
+                                }
+                            </div>
                         }
                     </div>
                 }
@@ -68,25 +199,65 @@
     private record NavItem(string Label, string Url, string Icon);
     private List<NavItem> _navItems = [];
     private bool   _setupOpen;
+    private bool   _generalOpen;
+    private bool   _financeOpen;
+    private bool   _itemsOpen;
+    private bool   _securityOpen;
+    private bool   _eodSetupOpen;
+    private bool   _payrollSetupOpen;
+    private bool   _payablesOpen;
     private string _navError = string.Empty;
 
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
-    private static readonly (string Label, string Url)[] _setupItems =
+    private static readonly (string Label, string Url)[] _generalItems =
     [
-        ("Users",              "/portal/admin/users"),
-        ("Permissions",        "/portal/admin/permissions"),
+        ("Theme Editor",   "/portal/admin/theme"),
+        ("Logo Manager",   "/portal/admin/logo"),
+        ("Countries",      "/portal/admin/countries"),
+        ("States / Regions", "/portal/admin/states-regions"),
+        ("Locations",      "/portal/admin/locations"),
+        ("Departments",    "/portal/admin/department-setup"),
+    ];
+
+    private static readonly (string Label, string Url)[] _financeItems =
+    [
         ("Chart Of Accounts",  "/portal/admin/chart-of-accounts"),
-        ("Account Categories", "/portal/admin/account-categories"),
         ("Account Types",      "/portal/admin/account-types"),
-        ("Items",              "/portal/admin/items"),
-        ("Shipping Methods",   "/portal/admin/shipping-methods"),
-        ("Vendors",            "/portal/admin/vendors"),
-        ("Countries",          "/portal/admin/countries"),
-        ("States / Regions",   "/portal/admin/states-regions"),
-        ("Locations",          "/portal/admin/locations"),
-        ("Logo Manager",       "/portal/admin/logo"),
-        ("Theme Editor",       "/portal/admin/theme"),
+        ("Account Categories", "/portal/admin/account-categories"),
+    ];
+
+    private static readonly (string Label, string Url)[] _itemsItems =
+    [
+        ("Shipping Methods", "/portal/admin/shipping-methods"),
+        ("Items",            "/portal/admin/items"),
+    ];
+
+    private static readonly (string Label, string Url)[] _securityItems =
+    [
+        ("Users",       "/portal/admin/users"),
+        ("Permissions", "/portal/admin/permissions"),
+    ];
+
+    private static readonly (string Label, string Url)[] _eodSetupItems =
+    [
+        ("Sections",  "/portal/admin/eod-sections"),
+        ("Columns",   "/portal/admin/eod-columns"),
+        ("Rows",      "/portal/admin/eod-rows"),
+        ("EOD Setup", "/portal/admin/eod-setup"),
+    ];
+
+    private static readonly (string Label, string Url)[] _payrollSetupItems =
+    [
+        ("Job Roles",      "/portal/admin/job-roles"),
+        ("Employee Setup", "/portal/admin/employee-setup"),
+        ("Batch Setup",    "/portal/admin/batch-setup"),
+    ];
+
+    private static readonly (string Label, string Url)[] _payablesItems =
+    [
+        ("Vendors",     "/portal/admin/vendors"),
+        ("Check Setup", "/portal/admin/check-setup"),
     ];
 
     protected override void OnInitialized()
@@ -114,7 +285,14 @@
             )).ToList();
 
             var path = new Uri(Nav.Uri).AbsolutePath;
-            _setupOpen = path.StartsWith("/portal/admin/", StringComparison.OrdinalIgnoreCase);
+            _setupOpen        = path.StartsWith("/portal/admin/", StringComparison.OrdinalIgnoreCase);
+            _generalOpen      = _generalItems.Any(x      => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _financeOpen      = _financeItems.Any(x      => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _itemsOpen        = _itemsItems.Any(x        => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _securityOpen     = _securityItems.Any(x     => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _eodSetupOpen     = _eodSetupItems.Any(x     => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _payrollSetupOpen = _payrollSetupItems.Any(x => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
+            _payablesOpen     = _payablesItems.Any(x     => path.Equals(x.Url, StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
         {

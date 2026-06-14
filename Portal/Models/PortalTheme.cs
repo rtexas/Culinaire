@@ -13,6 +13,8 @@ public sealed record PortalTheme
     public string SidebarText     { get; set; } = "#FFFFFF";
     public string HeaderBg        { get; set; } = "#2B6B35";
     public string HeaderText      { get; set; } = "#FFFFFF";
+    public string FooterBg        { get; set; } = "#1A4A22";
+    public string FooterText      { get; set; } = "#FFFFFF";
 
     public string ToCssVariables() =>
         ":root {" +
@@ -24,5 +26,7 @@ public sealed record PortalTheme
         $"--color-sidebar-txt:{SidebarText};" +
         $"--color-header-bg:{HeaderBg};" +
         $"--color-header-txt:{HeaderText};" +
+        $"--color-footer-bg:{FooterBg};" +
+        $"--color-footer-txt:{FooterText};" +
         "}";
 }

@@ -1,0 +1,651 @@
+@page "/portal/admin/eod-setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject LocationService        LocationSvc
+@inject EodColumnService       ColumnSvc
+@inject EodRowService          RowSvc
+@inject EodSectionService      SectionSvc
+@inject EodSetupService        SetupSvc
+@inject ChartOfAccountsService CoaSvc
+
+<PageTitle>EOD Sales Setup — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">EOD Sales Setup</h1>
+    </div>
+
+    <!-- ── Location selector ─────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:24px;max-width:480px;">
+        <h2 class="form-section-title">Location</h2>
+        <div class="form-row" style="margin:0;">
+            <label>Select Location</label>
+            <select @bind="_locationId" @bind:after="OnLocationChangedAsync">
+                <option value="0">— Select a location —</option>
+                @foreach (var loc in _locations)
+                {
+                    <option value="@loc.LocationID">@loc.Code — @loc.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (_locationId > 0)
+    {
+        <!-- ── Version list ───────────────────────────────────────────────── -->
+        <div class="form-card" style="margin-bottom:24px;">
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+                <h2 class="form-section-title" style="margin:0;">Versions</h2>
+                <button class="btn-primary btn-sm" @onclick="NewVersionAsync">+ New Version</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_versionMessage))
+            {
+                <div class="alert @(_versionError ? "alert-error" : "alert-success")" style="margin-bottom:12px;">@_versionMessage</div>
+            }
+
+            @if (_versions.Count == 0)
+            {
+                <p style="color:var(--color-text-muted);font-size:13px;">No versions yet. Click <strong>+ New Version</strong> to create one.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width:60px;text-align:center;">Ver.</th>
+                            <th>Description</th>
+                            <th style="width:60px;text-align:center;">Active</th>
+                            <th style="width:80px;text-align:center;">Created</th>
+                            <th style="width:200px;text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in _versions)
+                        {
+                            <tr @key="v.SetupID" class="@(_editSetupId == v.SetupID ? "row-selected" : "")">
+                                <td style="text-align:center;font-weight:600;">@v.VersionNumber</td>
+                                <td>@(string.IsNullOrEmpty(v.Description) ? "—" : v.Description)</td>
+                                <td style="text-align:center;">
+                                    @if (v.IsEnabled)
+                                    { <span style="color:var(--color-primary);font-weight:600;">✓</span> }
+                                </td>
+                                <td style="text-align:center;font-size:12px;">@v.CreatedAt.ToString("MM/dd/yy")</td>
+                                <td style="text-align:center;white-space:nowrap;">
+                                    <button class="btn-sm btn-secondary" @onclick="() => LoadVersionAsync(v.SetupID)">Edit</button>
+                                    @if (!v.IsEnabled)
+                                    {
+                                        <button class="btn-sm btn-primary"    @onclick="() => EnableVersionAsync(v.SetupID)">Enable</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-sm btn-secondary"  @onclick="() => DisableVersionAsync(v.SetupID)">Disable</button>
+                                    }
+                                    <button class="btn-sm btn-secondary"      @onclick="() => CopyVersionAsync(v.SetupID)">Copy</button>
+                                    <button class="btn-sm btn-danger"         @onclick="() => ConfirmDelete(v)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    @if (_editSetupId > 0 && _layout is not null)
+    {
+        <!-- ── Layout editor ──────────────────────────────────────────────── -->
+        <div class="form-card" style="margin-bottom:24px;">
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+                <h2 class="form-section-title" style="margin:0;">
+                    Layout — Version @_layout.Setup.VersionNumber
+                    @if (_layout.Setup.IsEnabled)
+                    { <span style="font-size:12px;font-weight:400;color:var(--color-primary);margin-left:8px;">(Active)</span> }
+                </h2>
+                <div style="flex:1;min-width:200px;">
+                    <input type="text" @bind="_editDescription" @bind:event="oninput"
+                           maxlength="200" placeholder="Version description (optional)"
+                           style="width:100%;" />
+                </div>
+                <button class="btn-primary" @onclick="SaveLayoutAsync" disabled="@_saving">
+                    @(_saving ? "Saving…" : "Save Layout")
+                </button>
+                <button class="btn-secondary" @onclick="CancelEdit">Close</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_layoutMessage))
+            {
+                <div class="alert @(_layoutError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_layoutMessage</div>
+            }
+
+            <!-- Column and Row selectors side-by-side -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+
+                <!-- Columns panel -->
+                <div style="border:1px solid var(--color-border);border-radius:6px;padding:12px;">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:var(--color-text-heading);">Columns</div>
+                    @if (_allColumns.Count == 0)
+                    {
+                        <p style="font-size:12px;color:var(--color-text-muted);">No columns defined.</p>
+                    }
+                    else
+                    {
+                        <div style="max-height:260px;overflow-y:auto;">
+                            @foreach (var entry in _colEntries)
+                            {
+                                <div @key="entry.Column.ColumnID"
+                                     style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--color-border-light);">
+                                    <input type="checkbox" checked="@entry.Selected"
+                                           @onchange="e => ToggleColumn(entry, (bool)e.Value!)"
+                                           style="width:auto;flex-shrink:0;" />
+                                    <span style="flex:1;font-size:13px;">@entry.Column.Name
+                                        @if (!string.IsNullOrEmpty(entry.Column.SegmentValue))
+                                        { <span style="font-size:11px;color:var(--color-text-muted);margin-left:4px;">[@entry.Column.SegmentValue]</span> }
+                                    </span>
+                                    @if (entry.Selected)
+                                    {
+                                        <button class="btn-sm btn-secondary" style="padding:1px 5px;font-size:11px;"
+                                                @onclick="() => MoveColumn(entry, -1)"
+                                                disabled="@(ColOrder(entry) == 0)">▲</button>
+                                        <button class="btn-sm btn-secondary" style="padding:1px 5px;font-size:11px;"
+                                                @onclick="() => MoveColumn(entry, 1)"
+                                                disabled="@(ColOrder(entry) == _selectedColumns.Count - 1)">▼</button>
+                                        <span style="font-size:11px;color:var(--color-text-muted);min-width:18px;text-align:right;">@(ColOrder(entry)+1)</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Rows panel -->
+                <div style="border:1px solid var(--color-border);border-radius:6px;padding:12px;">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:var(--color-text-heading);">Rows</div>
+                    @if (_allRows.Count == 0)
+                    {
+                        <p style="font-size:12px;color:var(--color-text-muted);">No rows defined.</p>
+                    }
+                    else
+                    {
+                        <div style="max-height:260px;overflow-y:auto;">
+                            @foreach (var sec in _sectionGroups)
+                            {
+                                <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                                            color:var(--color-text-muted);padding:6px 0 2px;letter-spacing:.5px;">
+                                    @sec.SectionName
+                                    <span style="font-weight:400;">(×@(sec.Multiplier >= 0 ? "+" : "")@sec.Multiplier)</span>
+                                </div>
+                                @foreach (var entry in sec.RowEntries)
+                                {
+                                    <div @key="entry.Row.RowID"
+                                         style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 8px;border-bottom:1px solid var(--color-border-light);">
+                                        <input type="checkbox" checked="@entry.Selected"
+                                               @onchange="e => ToggleRow(entry, (bool)e.Value!)"
+                                               style="width:auto;flex-shrink:0;" />
+                                        <span style="flex:1;font-size:13px;">@entry.Row.Name</span>
+                                        @if (entry.Selected)
+                                        {
+                                            var sectionSelectedRows = sec.RowEntries.Where(r => r.Selected).ToList();
+                                            var rowIdx = sectionSelectedRows.IndexOf(entry);
+                                            <button class="btn-sm btn-secondary" style="padding:1px 5px;font-size:11px;"
+                                                    @onclick="() => MoveRow(entry, sec, -1)"
+                                                    disabled="@(rowIdx == 0)">▲</button>
+                                            <button class="btn-sm btn-secondary" style="padding:1px 5px;font-size:11px;"
+                                                    @onclick="() => MoveRow(entry, sec, 1)"
+                                                    disabled="@(rowIdx == sectionSelectedRows.Count - 1)">▼</button>
+                                            <span style="font-size:11px;color:var(--color-text-muted);min-width:18px;text-align:right;">@(rowIdx+1)</span>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Account assignment grid -->
+            @if (_selectedColumns.Count > 0 && _selectedRows.Count > 0)
+            {
+                <div>
+                    <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:var(--color-text-heading);">
+                        G/L Account Assignment
+                        <span style="font-weight:400;font-size:12px;color:var(--color-text-muted);margin-left:8px;">
+                            Select the G/L account for each row × column cell. Leave blank if not applicable.
+                        </span>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table eod-setup-grid">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:160px;">Row</th>
+                                    @foreach (var col in _selectedColumns)
+                                    {
+                                        <th style="min-width:200px;text-align:center;">
+                                            @col.Column.Name
+                                            @if (!string.IsNullOrEmpty(col.Column.SegmentValue))
+                                            { <div style="font-size:10px;font-weight:400;color:var(--color-text-muted);">[@col.Column.SegmentValue]</div> }
+                                        </th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var sec in _sectionGroups)
+                                {
+                                    var secRows = sec.RowEntries.Where(r => r.Selected).ToList();
+                                    if (secRows.Count == 0) continue;
+
+                                    <tr>
+                                        <td colspan="@(_selectedColumns.Count + 1)"
+                                            style="font-size:11px;font-weight:700;text-transform:uppercase;
+                                                   color:var(--color-text-muted);background:var(--color-bg-page);
+                                                   padding:4px 10px;letter-spacing:.5px;">
+                                            @sec.SectionName
+                                        </td>
+                                    </tr>
+                                    @foreach (var rowEntry in secRows)
+                                    {
+                                        <tr @key="rowEntry.Row.RowID">
+                                            <td style="font-size:13px;">@rowEntry.Row.Name</td>
+                                            @foreach (var colEntry in _selectedColumns)
+                                            {
+                                                var key = (rowEntry.Row.RowID, colEntry.Column.ColumnID);
+                                                var validAccounts = GetAccountsForColumn(colEntry.Column);
+                                                <td style="padding:4px;">
+                                                    <select style="width:100%;font-size:12px;"
+                                                            value="@(GetCellAccount(key))"
+                                                            @onchange="e => SetCellAccount(key, e.Value?.ToString())">
+                                                        <option value="">— None —</option>
+                                                        @foreach (var acct in validAccounts)
+                                                        {
+                                                            <option value="@acct.AccountID">@acct.FullAccountString — @acct.Description</option>
+                                                        }
+                                                    </select>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else if (_selectedColumns.Count == 0 || _selectedRows.Count == 0)
+            {
+                <p style="font-size:13px;color:var(--color-text-muted);">
+                    Select at least one column and one row above to assign G/L accounts.
+                </p>
+            }
+        </div>
+    }
+</div>
+
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Delete Version</h3>
+            <p>Permanently delete <strong>Version @_deleteTarget.VersionNumber</strong>
+               @(string.IsNullOrEmpty(_deleteTarget.Description) ? "" : $"— {_deleteTarget.Description}")?
+               This cannot be undone.
+            </p>
+            @if (_deleteTarget.IsEnabled)
+            {
+                <p style="color:var(--color-danger);font-size:13px;">
+                    Warning: This is the active version. Deleting it will deactivate EOD Sales for this location.
+                </p>
+            }
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DeleteVersionAsync">Delete</button>
+                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ── Reference data ─────────────────────────────────────────────────────────
+    private List<Portal.Models.Location>  _locations  = [];
+    private List<Portal.Models.EodColumn> _allColumns = [];
+    private List<Portal.Models.EodRow>    _allRows    = [];
+    private List<Portal.Models.EodSection> _allSections = [];
+
+    // ── Location / version state ───────────────────────────────────────────────
+    private int                           _locationId = 0;
+    private Portal.Models.Location?       _selectedLocation;
+    private List<Portal.Models.EodSetup>  _versions   = [];
+    private string _versionMessage = string.Empty;
+    private bool   _versionError;
+
+    // ── G/L accounts for selected location ────────────────────────────────────
+    private List<Portal.Models.GlAccount> _locationAccounts = [];
+
+    // ── Layout editor state ────────────────────────────────────────────────────
+    private int                          _editSetupId    = 0;
+    private Portal.Models.EodSetupLayout? _layout;
+    private string                       _editDescription = string.Empty;
+    private bool                         _saving;
+    private string                       _layoutMessage  = string.Empty;
+    private bool                         _layoutError;
+
+    // Column selection ordered list
+    private List<ColEntry>          _colEntries     = [];
+    private List<ColEntry>          _selectedColumns => _colEntries.Where(c => c.Selected).OrderBy(c => c.Order).ToList();
+
+    // Row selection grouped by section
+    private List<SectionGroup>      _sectionGroups  = [];
+    private List<RowEntry>          _selectedRows   => _sectionGroups.SelectMany(g => g.RowEntries.Where(r => r.Selected)).ToList();
+
+    // Cell account assignments: (RowID, ColumnID) → AccountID
+    private Dictionary<(int, int), int?> _cellAccounts = [];
+
+    // Delete
+    private Portal.Models.EodSetup? _deleteTarget;
+
+    // ── Helper inner types ─────────────────────────────────────────────────────
+    private sealed class ColEntry
+    {
+        public Portal.Models.EodColumn Column   { get; set; } = null!;
+        public bool                    Selected { get; set; }
+        public int                     Order    { get; set; }
+    }
+
+    private sealed class RowEntry
+    {
+        public Portal.Models.EodRow Row      { get; set; } = null!;
+        public bool                 Selected { get; set; }
+        public int                  Order    { get; set; }
+    }
+
+    private sealed class SectionGroup
+    {
+        public int            SectionID   { get; set; }
+        public string         SectionName { get; set; } = string.Empty;
+        public int            Multiplier  { get; set; }
+        public List<RowEntry> RowEntries  { get; set; } = [];
+    }
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        var locTask = LocationSvc.GetAllAsync();
+        var colTask = ColumnSvc.GetAllAsync();
+        var rowTask = RowSvc.GetAllAsync();
+        var secTask = SectionSvc.GetAllAsync();
+        await Task.WhenAll(locTask, colTask, rowTask, secTask);
+        _locations   = locTask.Result.Where(l => l.IsActive).ToList();
+        _allColumns  = colTask.Result;
+        _allRows     = rowTask.Result;
+        _allSections = secTask.Result;
+    }
+
+    // ── Location change ────────────────────────────────────────────────────────
+
+    private async Task OnLocationChangedAsync()
+    {
+        _selectedLocation = _locations.FirstOrDefault(l => l.LocationID == _locationId);
+        _versions         = _locationId > 0
+            ? await SetupSvc.GetVersionsForLocationAsync(_locationId)
+            : [];
+        _locationAccounts = _locationId > 0 && _selectedLocation is { SegmentNumber: > 0 }
+            ? await CoaSvc.GetForLocationAsync(_selectedLocation.SegmentNumber, _selectedLocation.Code)
+            : [];
+        CancelEdit();
+        _versionMessage = string.Empty;
+    }
+
+    // ── Version management ─────────────────────────────────────────────────────
+
+    private async Task NewVersionAsync()
+    {
+        try
+        {
+            var v = await SetupSvc.CreateVersionAsync(_locationId, string.Empty);
+            _versions = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            _versionMessage = string.Empty;
+            await LoadVersionAsync(v.SetupID);
+        }
+        catch (Exception ex) { _versionMessage = ex.Message; _versionError = true; }
+    }
+
+    private async Task EnableVersionAsync(int setupID)
+    {
+        try
+        {
+            await SetupSvc.EnableVersionAsync(setupID, _locationId);
+            _versions = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            if (_layout?.Setup.SetupID == setupID)
+                _layout.Setup.IsEnabled = true;
+            _versionMessage = "Version enabled."; _versionError = false;
+        }
+        catch (Exception ex) { _versionMessage = ex.Message; _versionError = true; }
+    }
+
+    private async Task DisableVersionAsync(int setupID)
+    {
+        try
+        {
+            await SetupSvc.DisableVersionAsync(setupID);
+            _versions = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            if (_layout?.Setup.SetupID == setupID)
+                _layout.Setup.IsEnabled = false;
+            _versionMessage = "Version disabled."; _versionError = false;
+        }
+        catch (Exception ex) { _versionMessage = ex.Message; _versionError = true; }
+    }
+
+    private async Task CopyVersionAsync(int fromSetupID)
+    {
+        try
+        {
+            var v = await SetupSvc.CopyVersionAsync(fromSetupID, string.Empty);
+            _versions = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            _versionMessage = $"Version {v.VersionNumber} created as a copy."; _versionError = false;
+            await LoadVersionAsync(v.SetupID);
+        }
+        catch (Exception ex) { _versionMessage = ex.Message; _versionError = true; }
+    }
+
+    private void ConfirmDelete(Portal.Models.EodSetup v) => _deleteTarget = v;
+    private void CancelDelete()                            => _deleteTarget = null;
+
+    private async Task DeleteVersionAsync()
+    {
+        if (_deleteTarget is null) return;
+        var id = _deleteTarget.SetupID;
+        try
+        {
+            await SetupSvc.DeleteVersionAsync(id);
+            if (_editSetupId == id) CancelEdit();
+            _versions       = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            _versionMessage = "Version deleted."; _versionError = false;
+        }
+        catch (Exception ex) { _versionMessage = ex.Message; _versionError = true; }
+        finally { _deleteTarget = null; }
+    }
+
+    // ── Load / cancel layout editor ────────────────────────────────────────────
+
+    private async Task LoadVersionAsync(int setupID)
+    {
+        _layout         = await SetupSvc.GetLayoutAsync(setupID);
+        _editSetupId    = setupID;
+        _editDescription = _layout.Setup.Description;
+        _layoutMessage  = string.Empty;
+        BuildEditorState();
+    }
+
+    private void CancelEdit()
+    {
+        _editSetupId     = 0;
+        _layout          = null;
+        _editDescription = string.Empty;
+        _colEntries      = [];
+        _sectionGroups   = [];
+        _cellAccounts    = [];
+        _layoutMessage   = string.Empty;
+    }
+
+    // ── Build editor state from loaded layout ──────────────────────────────────
+
+    private void BuildEditorState()
+    {
+        if (_layout is null) return;
+        var setupID = _layout.Setup.SetupID;
+
+        // Selected column IDs in order
+        var selColIds = _layout.Columns
+            .OrderBy(c => c.DisplayOrder).Select(c => c.ColumnID).ToHashSet();
+
+        _colEntries = _allColumns.Select(c => new ColEntry
+        {
+            Column   = c,
+            Selected = selColIds.Contains(c.ColumnID),
+            Order    = _layout.Columns.FirstOrDefault(sc => sc.ColumnID == c.ColumnID)?.DisplayOrder
+                       ?? int.MaxValue,
+        }).ToList();
+
+        // Selected row IDs in order (per section)
+        var selRowOrders = _layout.Rows
+            .ToDictionary(r => r.RowID, r => r.DisplayOrder);
+
+        _sectionGroups = _allSections
+            .OrderBy(s => s.SectionID)
+            .Select(sec =>
+            {
+                var rowsForSec = _allRows.Where(r => r.SectionID == sec.SectionID).ToList();
+                return new SectionGroup
+                {
+                    SectionID   = sec.SectionID,
+                    SectionName = sec.Name,
+                    Multiplier  = sec.Multiplier,
+                    RowEntries  = rowsForSec.Select(r => new RowEntry
+                    {
+                        Row      = r,
+                        Selected = selRowOrders.ContainsKey(r.RowID),
+                        Order    = selRowOrders.GetValueOrDefault(r.RowID, int.MaxValue),
+                    }).OrderBy(re => re.Selected ? re.Order : int.MaxValue)
+                      .ThenBy(re => re.Row.Name)
+                      .ToList(),
+                };
+            }).ToList();
+
+        // Cell accounts
+        _cellAccounts = _layout.Cells
+            .ToDictionary(c => (c.RowID, c.ColumnID), c => c.AccountID);
+    }
+
+    // ── Column selection / reorder ─────────────────────────────────────────────
+
+    private void ToggleColumn(ColEntry entry, bool selected)
+    {
+        entry.Selected = selected;
+        if (!selected)
+            _cellAccounts = _cellAccounts
+                .Where(kv => kv.Key.Item2 != entry.Column.ColumnID)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+        RenumberColumns();
+    }
+
+    private int ColOrder(ColEntry entry) =>
+        _selectedColumns.IndexOf(entry);
+
+    private void MoveColumn(ColEntry entry, int dir)
+    {
+        var sel = _selectedColumns;
+        int idx = sel.IndexOf(entry);
+        int newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= sel.Count) return;
+        var other = sel[newIdx];
+        (entry.Order, other.Order) = (other.Order, entry.Order);
+    }
+
+    private void RenumberColumns()
+    {
+        int o = 0;
+        foreach (var c in _colEntries.Where(c => c.Selected).OrderBy(c => c.Order))
+            c.Order = o++;
+    }
+
+    // ── Row selection / reorder ────────────────────────────────────────────────
+
+    private void ToggleRow(RowEntry entry, bool selected)
+    {
+        entry.Selected = selected;
+        if (!selected)
+            _cellAccounts = _cellAccounts
+                .Where(kv => kv.Key.Item1 != entry.Row.RowID)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+        RenumberRows();
+    }
+
+    private void MoveRow(RowEntry entry, SectionGroup sec, int dir)
+    {
+        var sel = sec.RowEntries.Where(r => r.Selected).OrderBy(r => r.Order).ToList();
+        int idx = sel.IndexOf(entry);
+        int newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= sel.Count) return;
+        var other = sel[newIdx];
+        (entry.Order, other.Order) = (other.Order, entry.Order);
+    }
+
+    private void RenumberRows()
+    {
+        int o = 0;
+        foreach (var g in _sectionGroups)
+            foreach (var r in g.RowEntries.Where(r => r.Selected).OrderBy(r => r.Order))
+                r.Order = o++;
+    }
+
+    // ── Cell account helpers ───────────────────────────────────────────────────
+
+    private string GetCellAccount((int, int) key) =>
+        _cellAccounts.TryGetValue(key, out var id) && id.HasValue ? id.Value.ToString() : string.Empty;
+
+    private void SetCellAccount((int, int) key, string? value) =>
+        _cellAccounts[key] = int.TryParse(value, out var id) ? id : null;
+
+    private List<Portal.Models.GlAccount> GetAccountsForColumn(Portal.Models.EodColumn col)
+    {
+        if (col.CoaSegmentNumber == 0 || string.IsNullOrEmpty(col.SegmentValue))
+            return _locationAccounts;
+        return _locationAccounts
+            .Where(a => a.GetSegValue(col.CoaSegmentNumber) == col.SegmentValue)
+            .ToList();
+    }
+
+    // ── Save layout ────────────────────────────────────────────────────────────
+
+    private async Task SaveLayoutAsync()
+    {
+        _saving = true;
+        _layoutMessage = string.Empty;
+        try
+        {
+            var cols = _selectedColumns
+                .Select((c, i) => (c.Column.ColumnID, i));
+
+            var rowsList = _sectionGroups
+                .SelectMany(g => g.RowEntries.Where(r => r.Selected).OrderBy(r => r.Order))
+                .Select((r, i) => (r.Row.RowID, i));
+
+            // Include a cell entry for every selected row × selected column combination
+            var selColIds = _selectedColumns.Select(c => c.Column.ColumnID).ToHashSet();
+            var selRowIds = _selectedRows.Select(r => r.Row.RowID).ToHashSet();
+            var cells     = selRowIds.SelectMany(rowId =>
+                selColIds.Select(colId =>
+                {
+                    _cellAccounts.TryGetValue((rowId, colId), out var acct);
+                    return (rowId, colId, acct);
+                }));
+
+            await SetupSvc.SaveLayoutAsync(_editSetupId, _editDescription, cols, rowsList, cells);
+            _layout = await SetupSvc.GetLayoutAsync(_editSetupId);
+            _versions = await SetupSvc.GetVersionsForLocationAsync(_locationId);
+            BuildEditorState();
+            _layoutMessage = "Layout saved."; _layoutError = false;
+        }
+        catch (Exception ex) { _layoutMessage = ex.Message; _layoutError = true; }
+        finally { _saving = false; }
+    }
+}

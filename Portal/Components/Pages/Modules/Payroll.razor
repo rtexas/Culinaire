@@ -3,6 +3,11 @@
 @using System.Security.Claims
 @inject PermissionService      PermissionService
 @inject LocationSessionService LocationSession
+@inject LocationService        LocationSvc
+@inject PayrollBatchService    BatchConfigSvc
+@inject PayrollRunService      RunSvc
+@inject EmployeeService        EmployeeSvc
+@inject JobRoleService         JobRoleSvc
 @inject NavigationManager      Nav
 
 <PageTitle>Payroll — Culinaire Portal</PageTitle>
@@ -23,32 +28,367 @@ else
     <div class="module-page">
         <div class="module-header">
             <h1 class="page-heading">Payroll</h1>
-            @if (_level == "ReadWrite")
-            {
-                <button class="btn-primary" disabled>+ New Entry</button>
-            }
+            <div class="location-banner">📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName</div>
         </div>
 
-        <div class="location-banner">
-            📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
-        </div>
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="alert @(_isError ? "alert-error" : "alert-success")" style="max-width:820px;margin-bottom:16px;">@_msg</div>
+        }
 
-        <div class="module-placeholder">
-            <div class="placeholder-icon">💼</div>
-            <h2>Payroll Module</h2>
-            <p>Payroll processing and reporting will be displayed here.</p>
-            @if (_level == "Read")
+        @if (!_showForm)
+        {
+            <!-- ── Landing ──────────────────────────────────────────────────── -->
+            @if (_batchConfig is null)
             {
-                <span class="access-badge read-only">Read Only</span>
+                <div class="alert alert-info" style="max-width:560px;margin-bottom:16px;">
+                    No payroll batch configuration found for this location.
+                    Go to <strong>Admin → Payroll Setup</strong> to create one.
+                </div>
             }
+            else if (PermissionService.CanWrite(_level))
+            {
+                <div style="margin-bottom:24px;">
+                    <button class="btn-primary" @onclick="StartNewBatchAsync">+ New Payroll Batch</button>
+                </div>
+            }
+        }
+        else
+        {
+            <!-- ── Back button ──────────────────────────────────────────────── -->
+            <div style="margin-bottom:16px;">
+                <button class="btn-secondary" @onclick="CancelEdit">← Back to List</button>
+            </div>
+
+            <!-- ── Pay period info ─────────────────────────────────────────── -->
+            <div class="form-card" style="max-width:560px;margin-bottom:16px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+                    <div>
+                        <span style="color:var(--color-text-muted);">Pay Period</span><br />
+                        <strong>@_periodStart.ToString("MM/dd/yyyy") – @_periodEnd.ToString("MM/dd/yyyy")</strong>
+                    </div>
+                    <div>
+                        <span style="color:var(--color-text-muted);">Batch Name</span><br />
+                        <strong style="font-family:monospace;font-size:12px;">@_computedName</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Line entry form ─────────────────────────────────────────── -->
+            <div class="form-card" style="max-width:960px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <h2 class="form-section-title" style="margin:0;">
+                        @(_editRunId == 0 ? "New Batch" : $"Editing: {_computedName}")
+                    </h2>
+                </div>
+
+                <!-- line entry row — Enter key advances to next field in tab order -->
+                <div style="display:grid;grid-template-columns:1fr 1fr 85px 85px 110px 90px;gap:6px;align-items:end;margin-bottom:8px;">
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">Employee</label>
+                        <select id="pr-emp" @bind="_lineEmpId" @bind:after="OnLineEmployeeChanged"
+                                style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('pr-role')?.focus();}">
+                            <option value="0">— Employee —</option>
+                            @foreach (var e in _locationEmployees)
+                            { <option value="@e.EmployeeID">@e.Name</option> }
+                        </select>
+                    </div>
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">Job Role</label>
+                        <select id="pr-role" @bind="_lineRoleId" @bind:after="OnLineRoleChanged"
+                                style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('pr-type')?.focus();}">
+                            <option value="0">— Role —</option>
+                            @foreach (var r in _jobRoles)
+                            { <option value="@r.JobRoleID">@r.Name</option> }
+                        </select>
+                    </div>
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">Pay Type</label>
+                        <select id="pr-type" @bind="_linePayType" @bind:after="OnPayTypeChanged"
+                                style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('pr-hours')?.focus();}">
+                            <option value="Hourly">Hourly</option>
+                            <option value="Exempt">Exempt</option>
+                        </select>
+                    </div>
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">@(_linePayType == "Exempt" ? "Qty (fixed 1)" : "Hours")</label>
+                        <input id="pr-hours" type="number" @bind="_lineQty" @bind:after="RecalcLine"
+                               min="0" step="0.25" style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;"
+                               disabled="@(_linePayType == "Exempt")"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('pr-rate')?.focus();}" />
+                    </div>
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">@(_linePayType == "Exempt" ? "Amount" : "Pay Rate")</label>
+                        <input id="pr-rate" type="number" @bind="_lineRate" @bind:after="RecalcLine"
+                               min="0" step="0.01" style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('pr-emp')?.focus();}" />
+                    </div>
+                    <div style="min-width:0;">
+                        <label style="font-size:11px;margin-bottom:2px;">Total</label>
+                        <input type="text" readonly value="@_lineTotal.ToString("N2")"
+                               style="font-size:12px;padding:4px;width:100%;box-sizing:border-box;background:var(--color-bg-muted);text-align:right;" />
+                    </div>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <button class="btn-sm btn-primary" @onclick="AddLine"
+                            disabled="@(_lineEmpId == 0 || _lineRoleId == 0 || _lineTotal == 0)">
+                        + Add Line
+                    </button>
+                </div>
+
+                <!-- lines grid -->
+                @if (_lines.Count > 0)
+                {
+                    <table class="data-table" style="font-size:12.5px;">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Job Role</th>
+                                <th style="width:80px;">Pay Type</th>
+                                <th style="width:70px;text-align:right;">Hours/Qty</th>
+                                <th style="width:100px;text-align:right;">Rate / Amount</th>
+                                <th style="width:110px;text-align:right;">Total</th>
+                                <th style="width:50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (ln, idx) in _lines.Select((l, i) => (l, i)))
+                            {
+                                <tr @key="idx">
+                                    <td>@ln.EmployeeName</td>
+                                    <td>@ln.JobRoleName</td>
+                                    <td>@ln.PayType</td>
+                                    <td style="text-align:right;">@ln.Quantity.ToString("N2")</td>
+                                    <td style="text-align:right;">@ln.PayRate.ToString("N4")</td>
+                                    <td style="text-align:right;font-weight:600;">@ln.TotalAmount.ToString("C")</td>
+                                    <td style="text-align:center;">
+                                        <button class="btn-sm btn-danger" style="padding:1px 6px;"
+                                                @onclick="() => RemoveLine(idx)">✕</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight:700;background:var(--color-bg-muted);">
+                                <td colspan="5" style="text-align:right;padding-right:8px;">Grand Total:</td>
+                                <td style="text-align:right;">@GrandTotal.ToString("C")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+                else
+                {
+                    <p style="font-size:12.5px;color:var(--color-text-muted);margin:0;">
+                        No lines added yet. Use the form above to add employee pay lines.
+                    </p>
+                }
+
+                <div class="form-actions" style="margin-top:14px;">
+                    <button class="btn-primary" @onclick="SaveRunAsync"
+                            disabled="@(_lines.Count == 0)">
+                        @(_editRunId == 0 ? "Save Batch" : "Update Batch")
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- ── Recent Payroll Batches (always visible) ──────────────────────── -->
+        @if (_runs.Count > 0)
+        {
+            <div style="max-width:820px;margin-top:@(_showForm ? "32px" : "0");">
+                <h2 class="form-section-title">Recent Payroll Batches</h2>
+
+                @if (_selectedRun is not null)
+                {
+                    <div class="check-selected-panel">
+                        <div style="flex:1;">
+                            <strong>@_selectedRun.BatchName</strong>
+                            — @_selectedRun.PayPeriodStart.ToString("MM/dd/yyyy") to @_selectedRun.PayPeriodEnd.ToString("MM/dd/yyyy")
+                            — @_selectedRun.GrandTotal.ToString("C")
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            @if (_selectedRun.Status == "Saved" && PermissionService.CanWrite(_level))
+                            {
+                                @if (PermissionService.CanEdit(_level))
+                                {
+                                    <button class="btn-primary check-action-btn" @onclick="() => BeginEditAsync(_selectedRun.RunID)">Edit</button>
+                                }
+                                <button class="btn-danger  check-action-btn" @onclick="() => ConfirmVoid(_selectedRun)">Void</button>
+                                <button class="btn-primary check-action-btn" @onclick="() => ConfirmSubmit(_selectedRun)">Submit</button>
+                            }
+                            else if (_selectedRun.Status is "Submitted" or "Voided")
+                            {
+                                <button class="btn-sm btn-secondary check-action-btn" @onclick="ViewSelectedRunAsync">View Detail</button>
+                            }
+                            <button class="btn-sm check-action-btn" @onclick="() => _selectedRun = null">Exit</button>
+                        </div>
+                    </div>
+
+                    @if (_viewingRun is not null)
+                    {
+                        <div style="margin-top:12px;border:1px solid var(--color-border);border-radius:6px;overflow:hidden;">
+                            <table class="data-table" style="font-size:12.5px;">
+                                <thead>
+                                    <tr>
+                                        <th>Employee</th>
+                                        <th>Job Role</th>
+                                        <th style="width:80px;">Pay Type</th>
+                                        <th style="width:80px;text-align:right;">Hours/Qty</th>
+                                        <th style="width:110px;text-align:right;">Rate / Amount</th>
+                                        <th style="width:120px;text-align:right;">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ln in _viewingRun.Lines)
+                                    {
+                                        <tr>
+                                            <td>@ln.EmployeeName</td>
+                                            <td>@ln.JobRoleName</td>
+                                            <td>@ln.PayType</td>
+                                            <td style="text-align:right;">@ln.Quantity.ToString("N2")</td>
+                                            <td style="text-align:right;">@ln.PayRate.ToString("N4")</td>
+                                            <td style="text-align:right;font-weight:600;">@ln.TotalAmount.ToString("C")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr style="font-weight:700;background:var(--color-bg-muted);">
+                                        <td colspan="5" style="text-align:right;padding-right:8px;">Grand Total:</td>
+                                        <td style="text-align:right;">@_viewingRun.GrandTotal.ToString("C")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                }
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Batch Name</th>
+                            <th style="width:100px;">Period Start</th>
+                            <th style="width:100px;">Period End</th>
+                            <th style="text-align:right;width:110px;">Grand Total</th>
+                            <th style="width:90px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in _runs)
+                        {
+                            var isSelected = _selectedRun?.RunID == run.RunID;
+                            <tr @key="run.RunID" class="@(isSelected ? "check-row-selected" : "") @(run.Status == "Voided" ? "check-row-voided" : "")"
+                                style="cursor:pointer;" @onclick="() => SelectRun(run)">
+                                <td style="font-family:monospace;font-size:.85rem;">@run.BatchName</td>
+                                <td>@run.PayPeriodStart.ToString("MM/dd/yyyy")</td>
+                                <td>@run.PayPeriodEnd.ToString("MM/dd/yyyy")</td>
+                                <td style="text-align:right;font-weight:600;">@run.GrandTotal.ToString("C")</td>
+                                <td>
+                                    @if (run.Status == "Voided")
+                                    { <span class="status-badge status-voided">Voided</span> }
+                                    else if (run.Status == "Submitted")
+                                    { <span class="status-badge status-submitted">Submitted</span> }
+                                    else
+                                    { <span class="status-badge status-draft">Saved</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (!_showForm && _batchConfig is not null)
+        {
+            <p style="color:var(--color-text-muted);">No payroll batches recorded yet. Click <strong>+ New Payroll Batch</strong> to create one.</p>
+        }
+    </div>
+}
+
+<!-- ── Submit confirm modal ────────────────────────────────────────────────── -->
+@if (_submitTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelConfirm">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Submit Payroll Batch</h3>
+            <p>Submit <strong>@_submitTarget.BatchName</strong> for <strong>@_submitTarget.GrandTotal.ToString("C")</strong>?
+            Once submitted the batch becomes read-only.</p>
+            <div class="form-actions">
+                <button class="btn-primary"   @onclick="DoSubmitAsync">Submit</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ── Void confirm modal ──────────────────────────────────────────────────── -->
+@if (_voidTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelConfirm">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Void Payroll Batch</h3>
+            <p>Void <strong>@_voidTarget.BatchName</strong>? This cannot be undone.</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DoVoidAsync">Void Batch</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
+            </div>
         </div>
     </div>
 }
 
 @code {
+    // ── state ──────────────────────────────────────────────────────────────────
+
     private string _level = "None";
+    private bool   _showForm;
+
+    // single batch config for the location
+    private Portal.Models.PayrollBatch? _batchConfig;
+
+    // reference data
+    private List<Employee> _allEmployees      = [];
+    private List<Employee> _locationEmployees = [];
+    private List<JobRole>  _jobRoles          = [];
+
+    // computed for current batch
+    private DateOnly _periodStart = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _periodEnd   = DateOnly.FromDateTime(DateTime.Today);
+    private string   _computedName = string.Empty;
+
+    // line entry
+    private int     _lineEmpId   = 0;
+    private int     _lineRoleId  = 0;
+    private string  _linePayType = "Hourly";
+    private decimal _lineQty     = 1m;
+    private decimal _lineRate    = 0m;
+    private decimal _lineTotal   = 0m;
+
+    // current batch being built / edited
+    private int                  _editRunId = 0;
+    private List<PayrollRunLine> _lines     = [];
+
+    // runs list
+    private List<PayrollRun> _runs = [];
+
+    // selected row + detail view
+    private PayrollRun? _selectedRun;
+    private PayrollRun? _viewingRun;
+
+    // confirmations
+    private PayrollRun? _submitTarget;
+    private PayrollRun? _voidTarget;
+
+    // messages
+    private string _msg     = string.Empty;
+    private bool   _isError;
+
+    private decimal GrandTotal => _lines.Sum(l => l.TotalAmount);
 
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    // ── init ───────────────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
@@ -57,5 +397,210 @@ else
         var uid   = int.Parse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
         var role  = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "Viewer";
         _level    = await PermissionService.GetLevelAsync(uid, role, "Payroll");
+        if (_level == "None") return;
+
+        var locId    = LocationSession.SelectedLocationID;
+        var cfgTask  = BatchConfigSvc.GetForLocationAsync(locId);
+        var empTask  = EmployeeSvc.GetAllAsync();
+        var roleTask = JobRoleSvc.GetAllAsync();
+        var runTask  = RunSvc.GetRecentAsync(locId);
+        await Task.WhenAll(cfgTask, empTask, roleTask, runTask);
+
+        _batchConfig      = cfgTask.Result.FirstOrDefault();
+        _allEmployees     = empTask.Result;
+        _jobRoles         = roleTask.Result.Where(r => r.IsActive).ToList();
+        _runs             = runTask.Result;
+
+        _locationEmployees = _allEmployees
+            .Where(e => e.IsActive && e.LocationIDs.Contains(locId))
+            .OrderBy(e => e.Name)
+            .ToList();
+    }
+
+    // ── new batch ──────────────────────────────────────────────────────────────
+
+    private async Task StartNewBatchAsync()
+    {
+        if (_batchConfig is null) return;
+        ResetLineForm();
+        _editRunId = 0;
+        _lines     = [];
+        _msg       = string.Empty;
+
+        (_periodStart, _periodEnd) = await RunSvc.ComputeNextPeriodAsync(
+            _batchConfig.BatchID, _batchConfig.PayPeriodLength, _batchConfig.StartDayOfWeek);
+
+        _computedName = PayrollRunService.ResolveBatchName(
+            _batchConfig.BatchNameTemplate, LocationSession.SelectedLocationName, _periodStart, _periodEnd);
+
+        _showForm = true;
+    }
+
+    // ── line entry ─────────────────────────────────────────────────────────────
+
+    private void OnLineEmployeeChanged() => ApplyRoleDefaults();
+    private void OnLineRoleChanged()     => ApplyRoleDefaults();
+
+    private void ApplyRoleDefaults()
+    {
+        if (_lineRoleId == 0) return;
+        var role = _jobRoles.FirstOrDefault(r => r.JobRoleID == _lineRoleId);
+        if (role is null) return;
+        _linePayType = role.IsExempt ? "Exempt" : "Hourly";
+        if (_linePayType == "Exempt") _lineQty = 1m;
+        RecalcLine();
+    }
+
+    private void OnPayTypeChanged()
+    {
+        if (_linePayType == "Exempt") _lineQty = 1m;
+        RecalcLine();
+    }
+
+    private void RecalcLine()
+    {
+        _lineTotal = _linePayType == "Exempt"
+            ? _lineRate
+            : Math.Round(_lineQty * _lineRate, 2);
+    }
+
+    private void AddLine()
+    {
+        var emp  = _locationEmployees.FirstOrDefault(e => e.EmployeeID == _lineEmpId);
+        var role = _jobRoles.FirstOrDefault(r => r.JobRoleID == _lineRoleId);
+        if (emp is null || role is null) return;
+
+        _lines.Add(new PayrollRunLine
+        {
+            EmployeeID   = _lineEmpId,
+            EmployeeName = emp.Name,
+            JobRoleID    = _lineRoleId,
+            JobRoleName  = role.Name,
+            PayType      = _linePayType,
+            Quantity     = _linePayType == "Exempt" ? 1m : _lineQty,
+            PayRate      = _lineRate,
+            TotalAmount  = _lineTotal,
+        });
+        ResetLineForm();
+    }
+
+    private void RemoveLine(int idx)
+    {
+        if (idx >= 0 && idx < _lines.Count)
+            _lines.RemoveAt(idx);
+    }
+
+    private void ResetLineForm()
+    {
+        _lineEmpId   = 0;
+        _lineRoleId  = 0;
+        _linePayType = "Hourly";
+        _lineQty     = 1m;
+        _lineRate    = 0m;
+        _lineTotal   = 0m;
+    }
+
+    // ── save / edit ────────────────────────────────────────────────────────────
+
+    private async Task SaveRunAsync()
+    {
+        if (_batchConfig is null) return;
+        var run = new PayrollRun
+        {
+            RunID          = _editRunId,
+            BatchID        = _batchConfig.BatchID,
+            LocationID     = LocationSession.SelectedLocationID,
+            BatchName      = _computedName,
+            PayPeriodStart = _periodStart,
+            PayPeriodEnd   = _periodEnd,
+            GrandTotal     = GrandTotal,
+            Lines          = [.. _lines],
+        };
+
+        try
+        {
+            if (_editRunId == 0)
+                await RunSvc.CreateAsync(run);
+            else
+                await RunSvc.UpdateAsync(run);
+
+            _msg     = _editRunId == 0 ? "Batch saved." : "Batch updated.";
+            _isError = false;
+            _runs    = await RunSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+            CancelEdit();
+        }
+        catch (Exception ex)
+        {
+            _msg = ex.Message; _isError = true;
+        }
+    }
+
+    private async Task BeginEditAsync(int runId)
+    {
+        var run = await RunSvc.GetByIdAsync(runId);
+        if (run is null) return;
+
+        _editRunId    = run.RunID;
+        _periodStart  = run.PayPeriodStart;
+        _periodEnd    = run.PayPeriodEnd;
+        _computedName = run.BatchName;
+        _lines        = run.Lines.ToList();
+        _msg          = string.Empty;
+        _showForm     = true;
+    }
+
+    private void CancelEdit()
+    {
+        _showForm  = false;
+        _editRunId = 0;
+        _lines     = [];
+        _msg       = string.Empty;
+        ResetLineForm();
+    }
+
+    // ── submit / void ──────────────────────────────────────────────────────────
+
+    private void ConfirmSubmit(PayrollRun run) { _submitTarget = run; _voidTarget = null; }
+    private void ConfirmVoid(PayrollRun run)   { _voidTarget   = run; _submitTarget = null; }
+    private void CancelConfirm()               { _submitTarget = null; _voidTarget = null; }
+
+    private async Task DoSubmitAsync()
+    {
+        if (_submitTarget is null) return;
+        await RunSvc.SubmitAsync(_submitTarget.RunID);
+        _submitTarget = null;
+        _selectedRun  = null;
+        _viewingRun   = null;
+        _runs = await RunSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+    }
+
+    private async Task DoVoidAsync()
+    {
+        if (_voidTarget is null) return;
+        await RunSvc.VoidAsync(_voidTarget.RunID);
+        _voidTarget  = null;
+        _selectedRun = null;
+        _viewingRun  = null;
+        _runs = await RunSvc.GetRecentAsync(LocationSession.SelectedLocationID);
+    }
+
+    private void SelectRun(PayrollRun run)
+    {
+        if (_selectedRun?.RunID == run.RunID)
+        {
+            _selectedRun = null;
+            _viewingRun  = null;
+        }
+        else
+        {
+            _selectedRun = run;
+            _viewingRun  = null;
+        }
+    }
+
+    private async Task ViewSelectedRunAsync()
+    {
+        if (_selectedRun is null) return;
+        _viewingRun = await RunSvc.GetByIdAsync(_selectedRun.RunID);
     }
 }

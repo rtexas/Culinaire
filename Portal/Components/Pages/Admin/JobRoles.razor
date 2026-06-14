@@ -1,0 +1,273 @@
+@page "/portal/admin/job-roles"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject JobRoleService JobRoleSvc
+
+<PageTitle>Job Roles — Culinaire Portal</PageTitle>
+
+<div class="admin-page">
+    <div class="module-header">
+        <h1 class="page-heading">Job Roles</h1>
+        <button class="btn-primary" @onclick="NewRole">+ New Role</button>
+    </div>
+    <p class="page-sub">Define payroll job roles. Exempt = salaried; Hourly = paid per hour.</p>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:28px;">
+        <h2 class="form-section-title">Import Job Roles</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required columns:
+            <strong>Name</strong>.
+            Optional: <strong>ExternalID</strong>, <strong>Description</strong>, <strong>PayType</strong> (Hourly or Exempt/Salaried), <strong>IsActive</strong>.
+            Existing records matched by ExternalID or Name are updated.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnImportFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="," />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="RunImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Created: @_importResult.AccountsCreated,
+                updated: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error" style="max-width:640px;margin-bottom:16px;">@_error</div>
+    }
+    @if (!string.IsNullOrEmpty(_successMsg))
+    {
+        <div class="alert alert-success" style="max-width:640px;margin-bottom:16px;">@_successMsg</div>
+    }
+
+    <!-- ── Editor ─────────────────────────────────────────────────────────── -->
+    @if (_editing is not null)
+    {
+        <div class="form-card" style="max-width:560px;margin-bottom:28px;">
+            <h2 class="form-section-title">@(_editing.JobRoleID == 0 ? "New Job Role" : "Edit Job Role")</h2>
+
+            <div class="form-row">
+                <label>External ID</label>
+                <input type="text" @bind="_editing.ExternalID" maxlength="50" style="max-width:200px;" />
+            </div>
+            <div class="form-row">
+                <label>Name <span style="color:red;">*</span></label>
+                <input type="text" @bind="_editing.Name" maxlength="100" style="max-width:320px;" />
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea @bind="_editing.Description" rows="2" maxlength="500" style="max-width:460px;"></textarea>
+            </div>
+            <div class="form-row">
+                <label>Pay Type <span style="color:red;">*</span></label>
+                <div style="display:flex;gap:24px;align-items:center;padding-top:4px;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="radio" name="paytype_@(_editing.GetHashCode())"
+                               checked="@(!_editing.IsExempt)"
+                               @onchange="() => _editing.IsExempt = false" />
+                        Hourly
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="radio" name="paytype_@(_editing.GetHashCode())"
+                               checked="@(_editing.IsExempt)"
+                               @onchange="() => _editing.IsExempt = true" />
+                        Exempt (Salaried)
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Active</label>
+                <input type="checkbox" @bind="_editing.IsActive" />
+            </div>
+
+            <div class="form-actions">
+                <button class="btn-primary" @onclick="SaveAsync" disabled="@_busy">
+                    @(_busy ? "Saving…" : "Save")
+                </button>
+                <button class="btn-secondary" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <!-- ── Role list ──────────────────────────────────────────────────────── -->
+    @if (_loading)
+    {
+        <div class="loading-spinner">Loading…</div>
+    }
+    else if (_roles.Count == 0 && _editing is null)
+    {
+        <p style="color:var(--color-text-muted);">No job roles defined yet. Click <strong>+ New Role</strong> to add one.</p>
+    }
+    else
+    {
+        <div class="table-card">
+            <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+                <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_roles.Count record(s)</span>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>External ID</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Pay Type</th>
+                        <th>Status</th>
+                        <th style="width:80px;"></th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fExtId" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fPayType" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fStatus" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Filtered.Count == 0 && _roles.Count > 0)
+                    {
+                        <tr><td colspan="6" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var role in Filtered)
+                    {
+                        <tr @key="role.JobRoleID">
+                            <td style="font-size:12px;">@role.ExternalID</td>
+                            <td>@role.Name</td>
+                            <td style="font-size:12px;color:var(--color-text-muted);">@role.Description</td>
+                            <td>
+                                @if (role.IsExempt)
+                                { <span class="status-badge" style="background:#e0e7ff;color:#3730a3;">Exempt</span> }
+                                else
+                                { <span class="status-badge" style="background:#fef9c3;color:#713f12;">Hourly</span> }
+                            </td>
+                            <td>
+                                @if (role.IsActive)
+                                { <span class="status-badge status-active">Active</span> }
+                                else
+                                { <span class="status-badge status-inactive">Inactive</span> }
+                            </td>
+                            <td>
+                                <button class="btn-sm" @onclick="() => EditRole(role)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<JobRole> _roles = [];
+    private string _fExtId = string.Empty; private string _fName = string.Empty; private string _fDesc = string.Empty; private string _fPayType = string.Empty; private string _fStatus = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<JobRole> Filtered => _roles.Where(x => Mtch(x.ExternalID,_fExtId) && Mtch(x.Name,_fName) && Mtch(x.Description,_fDesc) && (string.IsNullOrEmpty(_fPayType)||(x.IsExempt?"Exempt":"Hourly").Contains(_fPayType,StringComparison.OrdinalIgnoreCase)) && (string.IsNullOrEmpty(_fStatus)||(x.IsActive?"Active":"Inactive").Contains(_fStatus,StringComparison.OrdinalIgnoreCase))).ToList();
+    private JobRole?      _editing;
+    private bool   _loading = true;
+    private bool   _busy;
+    private string _error      = string.Empty;
+    private string _successMsg = string.Empty;
+
+    // Import
+    private IBrowserFile? _importFile;
+    private bool          _importing;
+    private bool          _showDelimiter;
+    private string        _delimiter    = "|";
+    private ImportResult? _importResult;
+
+    private void OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        var ext = Path.GetExtension(e.File.Name).ToLowerInvariant();
+        _showDelimiter = ext is not ".xlsx" and not ".xls";
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            var delim = string.IsNullOrEmpty(_delimiter) ? ',' : _delimiter[0];
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await JobRoleSvc.ImportAsync(stream, _importFile.Name, delim);
+            _roles        = await JobRoleSvc.GetAllAsync();
+        }
+        catch (Exception ex) { _importResult = new ImportResult { Errors = [ex.Message] }; }
+        finally { _importing = false; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _roles   = await JobRoleSvc.GetAllAsync();
+        _loading = false;
+    }
+
+    private void NewRole()
+    {
+        _error = _successMsg = string.Empty;
+        _editing = new JobRole { IsActive = true };
+    }
+
+    private void EditRole(JobRole role)
+    {
+        _error = _successMsg = string.Empty;
+        _editing = new JobRole
+        {
+            JobRoleID   = role.JobRoleID,
+            ExternalID  = role.ExternalID,
+            Name        = role.Name,
+            Description = role.Description,
+            IsExempt    = role.IsExempt,
+            IsActive    = role.IsActive,
+        };
+    }
+
+    private void CancelEdit() { _editing = null; _error = string.Empty; }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+        if (string.IsNullOrWhiteSpace(_editing.Name)) { _error = "Name is required."; return; }
+
+        _busy = true; _error = string.Empty;
+        try
+        {
+            if (_editing.JobRoleID == 0)
+                await JobRoleSvc.CreateAsync(_editing);
+            else
+                await JobRoleSvc.UpdateAsync(_editing);
+
+            _roles      = await JobRoleSvc.GetAllAsync();
+            _successMsg = $"Job role '{_editing.Name}' saved.";
+            _editing    = null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

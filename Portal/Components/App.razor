@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Culinaire Portal</title>
     <base href="/" />
-    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/app.css?v=@(System.IO.File.GetLastWriteTimeUtc(System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot", "app.css")).Ticks)" />
     <HeadOutlet />
 </head>
 <body>

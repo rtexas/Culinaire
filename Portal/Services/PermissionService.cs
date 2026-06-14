@@ -31,10 +31,14 @@ public sealed class PermissionService
         return list;
     }
 
-    /// <summary>Returns the permission level for a specific user+module. Administrators always get ReadWrite.</summary>
+    // Level helpers — use these in Razor pages for consistent gate logic
+    public static bool CanWrite(string level) => level is "ReadWrite" or "EditAndVoid";
+    public static bool CanEdit(string level)  => level is "EditAndVoid";
+
+    /// <summary>Returns the permission level for a specific user+module. Administrators always get EditAndVoid.</summary>
     public async Task<string> GetLevelAsync(int userId, string roleType, string moduleName, CancellationToken ct = default)
     {
-        if (roleType == "Administrator") return "ReadWrite";
+        if (roleType == "Administrator") return "EditAndVoid";
         if (roleType == "Viewer")        return "Read";
 
         const string sql = """

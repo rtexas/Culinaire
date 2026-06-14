@@ -1,8 +1,10 @@
 @page "/portal/payables"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
 @inject PayableService         PayableService
 @inject NavigationManager      Nav
 @inject LocationSessionService LocationSession
+@inject PermissionService      PermissionSvc
 
 <PageTitle>Payables — Culinaire Portal</PageTitle>
 
@@ -12,115 +14,184 @@
         <p>No location selected.</p>
         <a class="btn-secondary" href="/portal">Return to Dashboard</a>
     </div>
-    return;
 }
+else
+{
+    <div class="portal-page">
+        <div class="module-header">
+            <h1 class="page-heading">Payables</h1>
+            <span style="font-size:13px;color:var(--color-text-muted);">
+                @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+            </span>
+        </div>
 
-<div class="admin-page">
-    <div class="module-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h1 class="page-heading">Payables</h1>
-        <button class="btn-primary" @onclick='() => Nav.NavigateTo("/portal/payables/new")'>
-            + New Invoice
-        </button>
-    </div>
-    <div class="location-banner" style="margin-bottom:12px;">
-        📍 @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
-    </div>
-    <p class="page-sub">Manage vendor invoices and payables transactions.</p>
-
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin-bottom:16px;">@_message</div>
-    }
-
-    <div class="table-card">
-        @if (_payables.Count == 0)
+        @if (PermissionService.CanWrite(_level))
         {
-            <p style="padding:16px;color:var(--color-text-muted);">No payables recorded yet. Click <strong>+ New Invoice</strong> to create one.</p>
+            <div style="margin-bottom:16px;">
+                <button class="btn-primary" @onclick='() => Nav.NavigateTo("/portal/payables/new")'>
+                    + New Invoice
+                </button>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isError ? "alert-error" : "alert-success")" style="max-width:750px;margin-bottom:16px;">@_message</div>
+        }
+
+        @if (_transactions.Count > 0)
+        {
+            <div style="max-width:900px;margin-top:8px;">
+                <h2 class="form-section-title">Recent Transactions</h2>
+
+                @if (_selected is not null)
+                {
+                    <div class="check-selected-panel">
+                        <div style="flex:1;">
+                            <strong>@_selected.InvoiceNumber</strong>
+                            — @_selected.VendorName
+                            — @_selected.Total.ToString("C")
+                            — @_selected.InvoiceDate.ToString("MM/dd/yyyy")
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            @if (_selected.Status == "Saved" && PermissionService.CanWrite(_level))
+                            {
+                                @if (PermissionService.CanEdit(_level))
+                                {
+                                    <button class="btn-primary check-action-btn"
+                                            @onclick='() => Nav.NavigateTo($"/portal/payables/{_selected.PayableID}")'>
+                                        Edit
+                                    </button>
+                                }
+                                <button class="btn-danger  check-action-btn" @onclick="ConfirmVoid">Void</button>
+                                <button class="btn-primary check-action-btn" @onclick="ConfirmSubmit">Submit</button>
+                            }
+                            <button class="btn-sm check-action-btn" @onclick="() => _selected = null">Exit</button>
+                        </div>
+                    </div>
+                }
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Vendor</th>
+                            <th style="width:100px;">Inv Date</th>
+                            <th style="width:100px;">Due Date</th>
+                            <th style="width:95px;text-align:right;">Total</th>
+                            <th style="width:80px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _transactions)
+                        {
+                            var isSel = _selected?.PayableID == p.PayableID;
+                            <tr @key="p.PayableID"
+                                class="@(isSel ? "check-row-selected" : "") @(p.Status == "Voided" ? "check-row-voided" : "")"
+                                style="cursor:pointer;" @onclick="() => SelectTransaction(p)">
+                                <td><code style="font-size:.85rem;">@p.InvoiceNumber</code></td>
+                                <td>@p.VendorName</td>
+                                <td>@p.InvoiceDate.ToString("MM/dd/yyyy")</td>
+                                <td>@(p.DueDate.HasValue ? p.DueDate.Value.ToString("MM/dd/yyyy") : "—")</td>
+                                <td style="text-align:right;font-weight:600;">@p.Total.ToString("C")</td>
+                                <td>
+                                    <span class="status-badge status-@p.Status.ToLowerInvariant()">@p.Status</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         }
         else
         {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th style="width:130px;">Invoice #</th>
-                        <th>Vendor</th>
-                        <th style="width:105px;">Inv Date</th>
-                        <th style="width:105px;">Due Date</th>
-                        <th style="width:95px;text-align:right;">Subtotal</th>
-                        <th style="width:85px;text-align:right;">Shipping</th>
-                        <th style="width:80px;text-align:right;">Tax</th>
-                        <th style="width:95px;text-align:right;">Total</th>
-                        <th style="width:80px;text-align:center;">Status</th>
-                        <th style="width:140px;text-align:center;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var p in _payables)
-                    {
-                        <tr @key="p.PayableID">
-                            <td><code style="font-size:.85rem;">@p.InvoiceNumber</code></td>
-                            <td>@p.VendorName</td>
-                            <td>@p.InvoiceDate.ToString("MM/dd/yyyy")</td>
-                            <td>@(p.DueDate.HasValue ? p.DueDate.Value.ToString("MM/dd/yyyy") : "—")</td>
-                            <td style="text-align:right;">@p.Subtotal.ToString("C")</td>
-                            <td style="text-align:right;">@(p.ShippingCharge > 0 ? p.ShippingCharge.ToString("C") : "—")</td>
-                            <td style="text-align:right;">@(p.TaxAmount > 0 ? p.TaxAmount.ToString("C") : "—")</td>
-                            <td style="text-align:right;font-weight:600;">@p.Total.ToString("C")</td>
-                            <td style="text-align:center;">
-                                <span class="status-badge status-@p.Status.ToLowerInvariant()">@p.Status</span>
-                            </td>
-                            <td style="text-align:center;white-space:nowrap;">
-                                <button class="btn-sm btn-secondary"
-                                        @onclick='() => Nav.NavigateTo($"/portal/payables/{p.PayableID}")'>
-                                    Edit
-                                </button>
-                                <button class="btn-sm btn-danger" @onclick="() => ConfirmDelete(p)">Delete</button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <p style="color:var(--color-text-muted);">No invoices recorded yet. Click <strong>+ New Invoice</strong> to create one.</p>
         }
     </div>
-</div>
+}
 
-@if (_deleteTarget is not null)
+@if (_submitTarget is not null)
 {
-    <div class="modal-backdrop" @onclick="CancelDelete">
+    <div class="modal-backdrop" @onclick="CancelConfirm">
         <div class="modal-box" @onclick:stopPropagation="true">
-            <h3>Delete Payable</h3>
-            <p>
-                Permanently delete invoice <strong>@_deleteTarget.InvoiceNumber</strong>
-                from <strong>@_deleteTarget.VendorName</strong>?
-                All line items will also be removed.
-            </p>
+            <h3>Submit Invoice</h3>
+            <p>Submit invoice <strong>@_submitTarget.InvoiceNumber</strong> for <strong>@_submitTarget.Total.ToString("C")</strong>?
+               Once submitted it becomes read-only.</p>
             <div class="form-actions">
-                <button class="btn-danger"    @onclick="DeleteAsync">Delete</button>
-                <button class="btn-secondary" @onclick="CancelDelete">Cancel</button>
+                <button class="btn-primary"   @onclick="DoSubmitAsync">Submit</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_voidTarget is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelConfirm">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>Void Invoice</h3>
+            <p>Void invoice <strong>@_voidTarget.InvoiceNumber</strong>? This cannot be undone.</p>
+            <div class="form-actions">
+                <button class="btn-danger"    @onclick="DoVoidAsync">Void Invoice</button>
+                <button class="btn-secondary" @onclick="CancelConfirm">Cancel</button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    private List<Portal.Models.PayableHeader> _payables = [];
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private string _level = "ReadWrite"; // default allows access for pages without prior permission checks
+    private List<Portal.Models.PayableHeader> _transactions = [];
+    private Portal.Models.PayableHeader?      _selected;
+    private Portal.Models.PayableHeader?      _submitTarget;
+    private Portal.Models.PayableHeader?      _voidTarget;
     private string _message = string.Empty;
     private bool   _isError;
-    private Portal.Models.PayableHeader? _deleteTarget;
 
     protected override async Task OnInitializedAsync()
-        => _payables = await PayableService.GetAllAsync();
-
-    private void ConfirmDelete(Portal.Models.PayableHeader p) => _deleteTarget = p;
-    private void CancelDelete()                                 => _deleteTarget = null;
-
-    private async Task DeleteAsync()
     {
-        if (_deleteTarget is null) return;
-        await PayableService.DeleteAsync(_deleteTarget.PayableID);
-        _message     = $"Invoice \"{_deleteTarget.InvoiceNumber}\" deleted.";
-        _isError     = false;
-        _deleteTarget = null;
-        _payables    = await PayableService.GetAllAsync();
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var uid  = int.Parse(state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            var role = state.User.FindFirst(ClaimTypes.Role)?.Value ?? "User";
+            _level = await PermissionSvc.GetLevelAsync(uid, role, "Payables");
+            if (_level == "None") return;
+        }
+        _transactions = await PayableService.GetRecentAsync(LocationSession.SelectedLocationID);
+    }
+
+    private void SelectTransaction(Portal.Models.PayableHeader p)
+    {
+        _selected = _selected?.PayableID == p.PayableID ? null : p;
+        _message  = string.Empty;
+    }
+
+    private void ConfirmSubmit() { _submitTarget = _selected; _voidTarget = null; }
+    private void ConfirmVoid()   { _voidTarget   = _selected; _submitTarget = null; }
+    private void CancelConfirm() { _submitTarget = null; _voidTarget = null; }
+
+    private async Task DoSubmitAsync()
+    {
+        if (_submitTarget is null) return;
+        await PayableService.SubmitAsync(_submitTarget.PayableID);
+        _message      = $"Invoice \"{_submitTarget.InvoiceNumber}\" submitted.";
+        _isError      = false;
+        _submitTarget = null;
+        _selected     = null;
+        _transactions = await PayableService.GetRecentAsync(LocationSession.SelectedLocationID);
+    }
+
+    private async Task DoVoidAsync()
+    {
+        if (_voidTarget is null) return;
+        await PayableService.VoidAsync(_voidTarget.PayableID);
+        _message    = $"Invoice \"{_voidTarget.InvoiceNumber}\" voided.";
+        _isError    = false;
+        _voidTarget = null;
+        _selected   = null;
+        _transactions = await PayableService.GetRecentAsync(LocationSession.SelectedLocationID);
     }
 }

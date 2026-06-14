@@ -12,8 +12,9 @@
     </div>
     <p class="page-sub">
         Set per-module access levels and location access for each user.
-        Administrators always have full access to all modules and locations.
-        Viewers always have Read-only module access.
+        Administrators always have full access (Edit &amp; Void) to all modules.
+        Viewers always have Read-only access. <strong>Read + Write</strong> allows creating, submitting, and voiding new transactions.
+        <strong>Edit &amp; Void</strong> additionally allows editing already-saved transactions.
     </p>
 
     <div class="form-row" style="max-width:360px;margin-bottom:24px;">
@@ -56,6 +57,7 @@
                                             <option value="None">No Access</option>
                                             <option value="Read">Read Only</option>
                                             <option value="ReadWrite">Read + Write</option>
+                                            <option value="EditAndVoid">Edit &amp; Void</option>
                                         </select>
                                     </td>
                                 </tr>

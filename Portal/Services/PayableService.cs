@@ -16,7 +16,7 @@ public sealed class PayableService
                ISNULL(h.[Notes],''), h.[Status],
                ISNULL((SELECT SUM(l.[ExtendedPrice]) FROM [dbo].[PayableLineItems] l
                         WHERE l.[PayableID] = h.[PayableID]), 0) AS Subtotal,
-               h.[CreatedAt], h.[UpdatedAt]
+               h.[CreatedAt], h.[UpdatedAt], h.[LocationID]
         FROM   [dbo].[PayableHeaders] h
         JOIN   [dbo].[Vendors]         v  ON v.[VendorID]         = h.[VendorID]
         LEFT JOIN [dbo].[ShippingMethods] sm ON sm.[ShippingMethodID] = h.[ShippingMethodID]
@@ -35,6 +35,37 @@ public sealed class PayableService
         while (await r.ReadAsync(ct)) list.Add(MapHeader(r));
         return list;
     }
+
+    public async Task<List<PayableHeader>> GetRecentAsync(int locationId, int top = 20, CancellationToken ct = default)
+    {
+        var sql = $"SELECT TOP(@Top) h.[PayableID], h.[VendorID], v.[Name] AS VendorName," +
+                  " h.[InvoiceNumber], h.[InvoiceDate], h.[DueDate]," +
+                  " h.[ShippingMethodID], ISNULL(sm.[Name],'') AS ShippingMethodName," +
+                  " ISNULL(h.[ShippingCharge],0), ISNULL(h.[TaxAmount],0)," +
+                  " ISNULL(h.[Notes],''), h.[Status]," +
+                  " ISNULL((SELECT SUM(l.[ExtendedPrice]) FROM [dbo].[PayableLineItems] l WHERE l.[PayableID]=h.[PayableID]),0) AS Subtotal," +
+                  " h.[CreatedAt], h.[UpdatedAt], h.[LocationID]" +
+                  " FROM [dbo].[PayableHeaders] h" +
+                  " JOIN [dbo].[Vendors] v ON v.[VendorID]=h.[VendorID]" +
+                  " LEFT JOIN [dbo].[ShippingMethods] sm ON sm.[ShippingMethodID]=h.[ShippingMethodID]" +
+                  " WHERE (h.[LocationID]=@LocID OR (h.[LocationID] IS NULL AND @LocID=0))" +
+                  " ORDER BY h.[InvoiceDate] DESC, h.[PayableID] DESC;";
+        var list = new List<PayableHeader>();
+        await using var conn = new SqlConnection(_cs);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Top",   top);
+        cmd.Parameters.AddWithValue("@LocID", locationId);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) list.Add(MapHeader(r));
+        return list;
+    }
+
+    public Task SubmitAsync(int id, CancellationToken ct = default) =>
+        UpdateStatusAsync(id, "Submitted", ct);
+
+    public Task VoidAsync(int id, CancellationToken ct = default) =>
+        UpdateStatusAsync(id, "Voided", ct);
 
     public async Task<PayableHeader?> GetByIdAsync(int id, CancellationToken ct = default)
     {
@@ -123,10 +154,10 @@ public sealed class PayableService
         const string sql = """
             INSERT INTO [dbo].[PayableHeaders]
                 ([VendorID],[InvoiceNumber],[InvoiceDate],[DueDate],
-                 [ShippingMethodID],[ShippingCharge],[TaxAmount],[Notes],[Status])
+                 [ShippingMethodID],[ShippingCharge],[TaxAmount],[Notes],[Status],[LocationID])
             OUTPUT INSERTED.[PayableID]
             VALUES(@VendorID,@InvNum,@InvDate,@DueDate,
-                   @ShipMethodID,@ShipCharge,@Tax,@Notes,@Status);
+                   @ShipMethodID,@ShipCharge,@Tax,@Notes,@Status,@LocID);
             """;
         await using var cmd = new SqlCommand(sql, conn, tx);
         BindHeaderParams(cmd, h);
@@ -141,7 +172,7 @@ public sealed class PayableService
             SET [VendorID]=@VendorID,[InvoiceNumber]=@InvNum,[InvoiceDate]=@InvDate,
                 [DueDate]=@DueDate,[ShippingMethodID]=@ShipMethodID,
                 [ShippingCharge]=@ShipCharge,[TaxAmount]=@Tax,
-                [Notes]=@Notes,[Status]=@Status,[UpdatedAt]=GETDATE()
+                [Notes]=@Notes,[Status]=@Status,[LocationID]=@LocID,[UpdatedAt]=GETDATE()
             WHERE [PayableID]=@PayableID;
             """;
         await using var cmd = new SqlCommand(sql, conn, tx);
@@ -162,6 +193,7 @@ public sealed class PayableService
         cmd.Parameters.AddWithValue("@Tax",         h.TaxAmount);
         cmd.Parameters.AddWithValue("@Notes",       (object?)(string.IsNullOrWhiteSpace(h.Notes) ? null : h.Notes) ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Status",      h.Status);
+        cmd.Parameters.AddWithValue("@LocID",       (object?)h.LocationID ?? DBNull.Value);
     }
 
     private static async Task DeleteLineItemsAsync(SqlConnection conn, SqlTransaction tx,
@@ -209,6 +241,7 @@ public sealed class PayableService
         Subtotal           = r.GetDecimal(12),
         CreatedAt          = r.GetDateTime(13),
         UpdatedAt          = r.GetDateTime(14),
+        LocationID         = r.IsDBNull(15) ? null : r.GetInt32(15),
     };
 
     private static PayableLineItem MapLine(SqlDataReader r) => new()

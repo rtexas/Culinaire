@@ -1,6 +1,8 @@
 @page "/portal/admin/theme"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
-@inject ThemeService ThemeService
+@using Microsoft.AspNetCore.Components.Forms
+@using ClosedXML.Excel
+@inject ThemeService    ThemeService
 @inject SettingsService SettingsService
 
 <PageTitle>Theme Editor — Culinaire Portal</PageTitle>
@@ -8,6 +10,51 @@
 <div class="admin-page">
     <div class="module-header">
         <h1 class="page-heading">Theme Editor</h1>
+    </div>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="form-card" style="margin-bottom:24px;max-width:700px;">
+        <h2 class="form-section-title">Import Theme</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
+            Supported: Excel (.xlsx) or any delimited text file. Required column: <strong>Property</strong>.
+            Color properties use <strong>Hex_Color</strong> and/or <strong>RGB_Color</strong>;
+            text properties use <strong>Value</strong>.
+            Rules: if Hex_Color is supplied it determines the color (RGB_Color is ignored);
+            if only RGB_Color is supplied it is converted to hex; if both are blank the property defaults to Black.
+            Unknown properties are skipped.
+            After import, review the live preview then click <strong>Save &amp; Apply</strong>.
+        </p>
+        <div class="form-row" style="max-width:480px;">
+            <label>File</label>
+            <InputFile OnChange="OnImportFileSelected" accept=".xlsx,.xls,.csv,.txt,.tsv" style="width:100%;" />
+        </div>
+        @if (_showDelimiter)
+        {
+            <div class="form-row" style="max-width:280px;">
+                <label>Delimiter</label>
+                <input type="text" @bind="_delimiter" maxlength="1" style="width:60px;" placeholder="|" />
+                <span style="font-size:12px;color:var(--color-text-muted);margin-left:8px;">Leave blank for comma</span>
+            </div>
+        }
+        <div class="form-actions">
+            <button class="btn-primary" @onclick="RunImportAsync" disabled="@(_importFile is null || _importing)">
+                @(_importing ? "Importing…" : "Import")
+            </button>
+        </div>
+        @if (_importResult is not null)
+        {
+            <div class="alert @(_importResult.HasErrors ? "alert-error" : "alert-success")" style="margin-top:12px;">
+                <strong>Import complete.</strong>
+                Properties applied: @_importResult.AccountsUpdated,
+                skipped: @_importResult.RowsSkipped.
+                @if (_importResult.HasErrors)
+                {
+                    <ul style="margin:8px 0 0;padding-left:20px;">
+                        @foreach (var e in _importResult.Errors) { <li>@e</li> }
+                    </ul>
+                }
+            </div>
+        }
     </div>
 
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
@@ -27,14 +74,16 @@
 
             <div class="form-section-label" style="margin-top:20px;">Colors</div>
 
-            <ColorPicker Label="Background"  @bind-HexValue="_t.BackgroundColor" OnChanged="RefreshPreview" />
-            <ColorPicker Label="Text"        @bind-HexValue="_t.TextColor"       OnChanged="RefreshPreview" />
-            <ColorPicker Label="Primary"     @bind-HexValue="_t.PrimaryColor"    OnChanged="RefreshPreview" />
-            <ColorPicker Label="Accent"      @bind-HexValue="_t.AccentColor"     OnChanged="RefreshPreview" />
-            <ColorPicker Label="Sidebar BG"  @bind-HexValue="_t.SidebarBg"       OnChanged="RefreshPreview" />
-            <ColorPicker Label="Sidebar Text"@bind-HexValue="_t.SidebarText"     OnChanged="RefreshPreview" />
-            <ColorPicker Label="Header BG"   @bind-HexValue="_t.HeaderBg"        OnChanged="RefreshPreview" />
-            <ColorPicker Label="Header Text" @bind-HexValue="_t.HeaderText"      OnChanged="RefreshPreview" />
+            <ColorPicker Label="Background"   @bind-HexValue="_t.BackgroundColor" OnChanged="RefreshPreview" />
+            <ColorPicker Label="Text"         @bind-HexValue="_t.TextColor"       OnChanged="RefreshPreview" />
+            <ColorPicker Label="Primary"      @bind-HexValue="_t.PrimaryColor"    OnChanged="RefreshPreview" />
+            <ColorPicker Label="Accent"       @bind-HexValue="_t.AccentColor"     OnChanged="RefreshPreview" />
+            <ColorPicker Label="Sidebar BG"   @bind-HexValue="_t.SidebarBg"       OnChanged="RefreshPreview" />
+            <ColorPicker Label="Sidebar Text" @bind-HexValue="_t.SidebarText"     OnChanged="RefreshPreview" />
+            <ColorPicker Label="Header BG"    @bind-HexValue="_t.HeaderBg"        OnChanged="RefreshPreview" />
+            <ColorPicker Label="Header Text"  @bind-HexValue="_t.HeaderText"      OnChanged="RefreshPreview" />
+            <ColorPicker Label="Footer BG"    @bind-HexValue="_t.FooterBg"        OnChanged="RefreshPreview" />
+            <ColorPicker Label="Footer Text"  @bind-HexValue="_t.FooterText"      OnChanged="RefreshPreview" />
 
             @if (!string.IsNullOrEmpty(_successMsg))
             {
@@ -42,7 +91,7 @@
             }
 
             <div class="form-actions" style="margin-top:20px;">
-                <button class="btn-primary" @onclick="SaveAsync">Save & Apply</button>
+                <button class="btn-primary" @onclick="SaveAsync">Save &amp; Apply</button>
                 <button class="btn-secondary" @onclick="ResetDefaults">Reset Defaults</button>
             </div>
         </div>
@@ -57,7 +106,9 @@
                         --prev-sidebar-txt:@_t.SidebarText;
                         --prev-bg:@_t.BackgroundColor;
                         --prev-txt:@_t.TextColor;
-                        --prev-primary:@_t.PrimaryColor;">
+                        --prev-primary:@_t.PrimaryColor;
+                        --prev-footer-bg:@_t.FooterBg;
+                        --prev-footer-txt:@_t.FooterText;">
                 <div class="prev-header">
                     <span class="prev-portal-name">@_t.PortalName</span>
                 </div>
@@ -73,14 +124,55 @@
                         <div class="prev-card" style="background:var(--prev-primary);opacity:.6;"></div>
                     </div>
                 </div>
+                <div style="background:var(--prev-footer-bg);color:var(--prev-footer-txt);
+                     padding:4px 8px;font-size:10px;font-weight:600;text-align:center;">
+                    Grand Total — Footer Preview
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 @code {
-    private Portal.Models.PortalTheme _t        = new();
+    private Portal.Models.PortalTheme _t         = new();
     private string                    _successMsg = string.Empty;
+
+    // ── Import state ──────────────────────────────────────────────────────────
+    private IBrowserFile?               _importFile;
+    private bool                        _importing;
+    private bool                        _showDelimiter;
+    private string                      _delimiter    = "|";
+    private Portal.Models.ImportResult? _importResult;
+
+    // ── Property → field mapping (display label → internal property name) ─────
+    private static readonly Dictionary<string, string> _propertyMap =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Portal Name"]      = "PortalName",
+            ["Tagline"]          = "Tagline",
+            ["Background Color"] = "BackgroundColor",
+            ["Background"]       = "BackgroundColor",
+            ["Text Color"]       = "TextColor",
+            ["Text"]             = "TextColor",
+            ["Primary Color"]    = "PrimaryColor",
+            ["Primary"]          = "PrimaryColor",
+            ["Accent Color"]     = "AccentColor",
+            ["Accent"]           = "AccentColor",
+            ["Sidebar BG"]       = "SidebarBg",
+            ["Sidebar Background"]= "SidebarBg",
+            ["Sidebar Text"]     = "SidebarText",
+            ["Header BG"]        = "HeaderBg",
+            ["Header Background"]= "HeaderBg",
+            ["Header Text"]      = "HeaderText",
+            ["Footer BG"]        = "FooterBg",
+            ["Footer Background"]= "FooterBg",
+            ["Footer Text"]      = "FooterText",
+        };
+
+    private static readonly HashSet<string> _textProperties =
+        new(StringComparer.OrdinalIgnoreCase) { "PortalName", "Tagline" };
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     protected override void OnInitialized()
     {
@@ -89,11 +181,197 @@
         {
             PortalName = c.PortalName, Tagline = c.Tagline, LogoPath = c.LogoPath,
             BackgroundColor = c.BackgroundColor, TextColor = c.TextColor,
-            PrimaryColor = c.PrimaryColor, AccentColor = c.AccentColor,
-            SidebarBg = c.SidebarBg, SidebarText = c.SidebarText,
-            HeaderBg = c.HeaderBg, HeaderText = c.HeaderText,
+            PrimaryColor = c.PrimaryColor,       AccentColor = c.AccentColor,
+            SidebarBg = c.SidebarBg,             SidebarText = c.SidebarText,
+            HeaderBg = c.HeaderBg,               HeaderText = c.HeaderText,
+            FooterBg = c.FooterBg,               FooterText = c.FooterText,
         };
     }
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    private void OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importFile    = e.File;
+        _importResult  = null;
+        _showDelimiter = Path.GetExtension(e.File.Name).ToLowerInvariant() is not ".xlsx" and not ".xls";
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_importFile is null) return;
+        _importing = true; _importResult = null;
+        try
+        {
+            var ms = new MemoryStream();
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var ext = Path.GetExtension(_importFile.Name).ToLowerInvariant();
+            _importResult = ext is ".xlsx" or ".xls" ? ParseExcel(ms) : ParseText(ms);
+        }
+        catch (Exception ex) { _importResult = new Portal.Models.ImportResult { Errors = [ex.Message] }; }
+        finally { _importing = false; RefreshPreview(); }
+    }
+
+    private Portal.Models.ImportResult ParseExcel(Stream stream)
+    {
+        var result = new Portal.Models.ImportResult();
+        using var wb = new XLWorkbook(stream);
+        var ws = wb.Worksheets.First();
+
+        var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
+        for (int c = 1; c <= lastCol; c++)
+        {
+            var h = ws.Cell(1, c).GetString().Trim();
+            if (!string.IsNullOrEmpty(h)) headers[h] = c;
+        }
+
+        int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+        for (int row = 2; row <= lastRow; row++)
+        {
+            string Get(string key) => headers.TryGetValue(key, out var col) ? ws.Cell(row, col).GetString().Trim() : string.Empty;
+            ProcessRow(Get("Property"), Get("Value"), Get("Hex_Color"), Get("RGB_Color"), result);
+        }
+        return result;
+    }
+
+    private Portal.Models.ImportResult ParseText(Stream stream)
+    {
+        var result  = new Portal.Models.ImportResult();
+        var delim   = string.IsNullOrEmpty(_delimiter) ? ',' : _delimiter[0];
+        using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
+
+        var headerLine = reader.ReadLine();
+        if (headerLine is null) return result;
+
+        var headers = SplitLine(headerLine, delim)
+            .Select((h, i) => (h.Trim(), i)).Where(x => !string.IsNullOrEmpty(x.Item1))
+            .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
+
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var cols = SplitLine(line, delim);
+            string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
+            ProcessRow(Get("Property"), Get("Value"), Get("Hex_Color"), Get("RGB_Color"), result);
+        }
+        return result;
+    }
+
+    private void ProcessRow(string property, string value, string hexColor, string rgbColor,
+                            Portal.Models.ImportResult result)
+    {
+        if (string.IsNullOrWhiteSpace(property)) { result.RowsSkipped++; return; }
+
+        if (!_propertyMap.TryGetValue(property, out var propName))
+        {
+            result.Errors.Add($"Unknown property '{property}' — skipped.");
+            result.RowsSkipped++;
+            return;
+        }
+
+        if (_textProperties.Contains(propName))
+        {
+            // Text property — use Value column
+            ApplyText(propName, string.IsNullOrWhiteSpace(value) ? string.Empty : value);
+            result.AccountsUpdated++;
+            return;
+        }
+
+        // Color property — resolve hex
+        string resolved;
+        if (!string.IsNullOrWhiteSpace(hexColor))
+        {
+            // Hex supplied: it wins regardless of RGB
+            resolved = NormaliseHex(hexColor);
+        }
+        else if (!string.IsNullOrWhiteSpace(rgbColor))
+        {
+            // RGB supplied, no hex: convert
+            resolved = HexFromRgb(rgbColor);
+            if (resolved == string.Empty)
+            {
+                result.Errors.Add($"Property '{property}': invalid RGB_Color '{rgbColor}' — defaulted to Black.");
+                resolved = "#000000";
+            }
+        }
+        else
+        {
+            // Both blank → Black
+            result.Errors.Add($"Property '{property}': no color supplied — defaulted to Black.");
+            resolved = "#000000";
+        }
+
+        ApplyColor(propName, resolved);
+        result.AccountsUpdated++;
+    }
+
+    private void ApplyColor(string propName, string hex)
+    {
+        switch (propName)
+        {
+            case "BackgroundColor": _t.BackgroundColor = hex; break;
+            case "TextColor":       _t.TextColor       = hex; break;
+            case "PrimaryColor":    _t.PrimaryColor    = hex; break;
+            case "AccentColor":     _t.AccentColor     = hex; break;
+            case "SidebarBg":       _t.SidebarBg       = hex; break;
+            case "SidebarText":     _t.SidebarText     = hex; break;
+            case "HeaderBg":        _t.HeaderBg        = hex; break;
+            case "HeaderText":      _t.HeaderText      = hex; break;
+            case "FooterBg":        _t.FooterBg        = hex; break;
+            case "FooterText":      _t.FooterText      = hex; break;
+        }
+    }
+
+    private void ApplyText(string propName, string val)
+    {
+        switch (propName)
+        {
+            case "PortalName": _t.PortalName = val; break;
+            case "Tagline":    _t.Tagline    = val; break;
+        }
+    }
+
+    // ── Color helpers ─────────────────────────────────────────────────────────
+
+    private static string NormaliseHex(string hex)
+    {
+        hex = hex.Trim().TrimStart('#');
+        if (hex.Length == 3)
+            hex = string.Concat(hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]);
+        return hex.Length == 6 ? $"#{hex.ToUpperInvariant()}" : "#000000";
+    }
+
+    private static string HexFromRgb(string rgb)
+    {
+        var parts = rgb.Split(',');
+        if (parts.Length == 3 &&
+            int.TryParse(parts[0].Trim(), out int r) &&
+            int.TryParse(parts[1].Trim(), out int g) &&
+            int.TryParse(parts[2].Trim(), out int b) &&
+            r is >= 0 and <= 255 && g is >= 0 and <= 255 && b is >= 0 and <= 255)
+            return $"#{r:X2}{g:X2}{b:X2}";
+        return string.Empty;
+    }
+
+    private static string[] SplitLine(string line, char delimiter)
+    {
+        var fields = new List<string>(); var sb = new System.Text.StringBuilder(); bool inQ = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"') { if (inQ && i+1 < line.Length && line[i+1] == '"') { sb.Append('"'); i++; } else inQ = !inQ; }
+            else if (c == delimiter && !inQ) { fields.Add(sb.ToString()); sb.Clear(); }
+            else sb.Append(c);
+        }
+        fields.Add(sb.ToString()); return [.. fields];
+    }
+
+    // ── Save / Reset ──────────────────────────────────────────────────────────
 
     private void RefreshPreview() => StateHasChanged();
 
@@ -112,6 +390,8 @@
             ["Theme.SidebarText"]     = _t.SidebarText,
             ["Theme.HeaderBg"]        = _t.HeaderBg,
             ["Theme.HeaderText"]      = _t.HeaderText,
+            ["Theme.FooterBg"]        = _t.FooterBg,
+            ["Theme.FooterText"]      = _t.FooterText,
         };
         foreach (var kv in saves)
             await SettingsService.UpdateAsync(kv.Key, kv.Value);
@@ -123,6 +403,7 @@
     private void ResetDefaults()
     {
         _t = new Portal.Models.PortalTheme();
+        _importResult = null;
         StateHasChanged();
     }
 }

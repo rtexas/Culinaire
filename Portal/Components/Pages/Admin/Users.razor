@@ -68,6 +68,9 @@
     else
     {
         <div class="table-card">
+            <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+                <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_users.Count record(s)</span>
+            </div>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -81,9 +84,24 @@
                         <th>Last Login</th>
                         <th>Actions</th>
                     </tr>
+                    <tr class="filter-row">
+                        <th><input type="search" @bind="_fUsername" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fFullName" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fEmail" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fRole" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fCity" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fState" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th><input type="search" @bind="_fStatus" @bind:event="oninput" placeholder="Filter…" /></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
-                    @foreach (var u in _users)
+                    @if (Filtered.Count == 0 && _users.Count > 0)
+                    {
+                        <tr><td colspan="9" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                    }
+                    @foreach (var u in Filtered)
                     {
                         <tr>
                             <td>@u.Username</td>
@@ -115,6 +133,9 @@
 
 @code {
     private List<Portal.Models.User> _users  = [];
+    private string _fUsername = string.Empty; private string _fFullName = string.Empty; private string _fEmail = string.Empty; private string _fRole = string.Empty; private string _fCity = string.Empty; private string _fState = string.Empty; private string _fStatus = string.Empty;
+    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+    private List<Portal.Models.User> Filtered => _users.Where(x => Mtch(x.Username,_fUsername) && Mtch(x.FullName,_fFullName) && Mtch(x.Email,_fEmail) && Mtch(x.RoleType,_fRole) && Mtch(x.City,_fCity) && Mtch(x.StateCode,_fState) && (string.IsNullOrEmpty(_fStatus)||(x.IsActive?"Active":"Inactive").Contains(_fStatus,StringComparison.OrdinalIgnoreCase))).ToList();
     private bool                     _loading = true;
 
     // import state

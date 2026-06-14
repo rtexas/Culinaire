@@ -22,6 +22,12 @@
         </div>
     }
 
+    @if (_readOnly)
+    {
+        <div class="alert alert-info" style="margin:16px 0;">
+            This invoice is <strong>@_status</strong> and cannot be edited.
+        </div>
+    }
     @if (!string.IsNullOrEmpty(_message))
     {
         <div class="alert @(_isError ? "alert-error" : "alert-success")" style="margin:16px 0;">@_message</div>
@@ -44,12 +50,9 @@
             </div>
             <div class="form-row">
                 <label>Status</label>
-                <select @bind="_status">
-                    <option value="Open">Open</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Paid">Paid</option>
-                    <option value="Void">Void</option>
-                </select>
+                <div style="padding:5px 8px;border:1px solid var(--color-border);border-radius:4px;font-size:14px;">
+                    <span class="status-badge status-@_status.ToLowerInvariant()">@_status</span>
+                </div>
             </div>
         </div>
 
@@ -221,10 +224,13 @@
 
     <!-- ── Actions ────────────────────────────────────────────────────────── -->
     <div class="form-actions">
-        <button class="btn-primary" @onclick="SaveAsync" disabled="@_saving">
-            @(_saving ? "Saving…" : (_payableId == 0 ? "Save Invoice" : "Save Changes"))
-        </button>
-        <button class="btn-secondary" @onclick='() => Nav.NavigateTo("/portal/payables")'>Cancel</button>
+        @if (!_readOnly)
+        {
+            <button class="btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                @(_saving ? "Saving…" : (_payableId == 0 ? "Save Invoice" : "Save Changes"))
+            </button>
+        }
+        <button class="btn-secondary" @onclick='() => Nav.NavigateTo("/portal/payables")'>← Back</button>
     </div>
 </div>
 
@@ -240,7 +246,8 @@
     private decimal  _shippingCharge;
     private decimal  _taxAmount;
     private string   _notes          = string.Empty;
-    private string   _status         = "Open";
+    private string   _status         = "Saved";
+    private bool     _readOnly;
     private bool     _saving;
     private string   _message        = string.Empty;
     private bool     _isError;
@@ -278,7 +285,8 @@
                 _shippingCharge   = header.ShippingCharge;
                 _taxAmount        = header.TaxAmount;
                 _notes            = header.Notes;
-                _status           = header.Status;
+                _status    = header.Status;
+                _readOnly  = _status != "Saved";
             }
             var dbLines = await PayableService.GetLineItemsAsync(_payableId);
             _lines = dbLines.Select(l => new LineEdit
@@ -364,7 +372,8 @@
                 ShippingCharge   = _shippingCharge,
                 TaxAmount        = _taxAmount,
                 Notes            = _notes,
-                Status           = _status,
+                Status           = "Saved",
+                LocationID       = LocationSession.HasLocation ? LocationSession.SelectedLocationID : null,
             };
 
             var lines = validLines.Select(l => new Portal.Models.PayableLineItem

@@ -26,6 +26,8 @@ public sealed class ThemeService
             SidebarText     = Get(settings, "Theme.SidebarText",   "#FFFFFF"),
             HeaderBg        = Get(settings, "Theme.HeaderBg",      "#2B6B35"),
             HeaderText      = Get(settings, "Theme.HeaderText",    "#FFFFFF"),
+            FooterBg        = Get(settings, "Theme.FooterBg",      "#1A4A22"),
+            FooterText      = Get(settings, "Theme.FooterText",    "#FFFFFF"),
         };
         NotifyChanged();
     }

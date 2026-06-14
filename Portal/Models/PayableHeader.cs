@@ -13,7 +13,8 @@ public sealed class PayableHeader
     public decimal   ShippingCharge     { get; set; }
     public decimal   TaxAmount          { get; set; }
     public string    Notes              { get; set; } = string.Empty;
-    public string    Status             { get; set; } = "Open";
+    public int?      LocationID         { get; set; }
+    public string    Status             { get; set; } = "Saved";
     public decimal   Subtotal           { get; set; }
     public decimal   Total              => Subtotal + ShippingCharge + TaxAmount;
     public DateTime  CreatedAt          { get; set; }
