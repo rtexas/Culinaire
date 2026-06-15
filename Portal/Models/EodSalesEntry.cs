@@ -29,8 +29,9 @@ public sealed class EodSalesGridSection
 {
     public int                  SectionID   { get; set; }
     public string               SectionName { get; set; } = string.Empty;
-    public int                  Multiplier  { get; set; }
-    public List<EodSetupRowDef> Rows        { get; set; } = [];
+    public int                  Multiplier    { get; set; }
+    public bool                 UseInEodSales { get; set; } = true;
+    public List<EodSetupRowDef> Rows          { get; set; } = [];
 }
 
 public sealed class EodSalesGrid

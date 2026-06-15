@@ -2,8 +2,10 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
-@inject LocationService LocationService
+@using Portal.Components.Shared
+@inject LocationService    LocationService
 @inject LocationSessionService LocationSession
+@inject DashboardService   DashboardSvc
 
 <PageTitle>Dashboard — Culinaire Portal</PageTitle>
 
@@ -62,6 +64,26 @@
                     }
                 }
             </div>
+
+            <!-- ── Last 7 Days Graphs ─────────────────────────────────────── -->
+            @if (LocationSession.HasLocation)
+            {
+                <h2 class="form-section-title" style="margin:32px 0 16px;">Last 7 Days</h2>
+
+                @if (_graphsLoading)
+                {
+                    <p style="color:var(--color-text-muted);font-size:13px;">Loading graphs…</p>
+                }
+                else
+                {
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+                        <LineGraph Title="EOD Sales"  Data="_eodData"      Color="#2B6B35" />
+                        <LineGraph Title="Payables"   Data="_payableData"  Color="#b91c1c" />
+                        <LineGraph Title="Checks"     Data="_checkData"    Color="#1d4ed8" />
+                        <LineGraph Title="Payroll"    Data="_payrollData"  Color="#7c3aed" />
+                    </div>
+                }
+            }
         </Authorized>
     </AuthorizeView>
 </div>
@@ -76,10 +98,17 @@
         new("💰", "Payables",  "/portal/payables"),
         new("🧾", "Checks",    "/portal/checks"),
         new("💼", "Payroll",   "/portal/payroll"),
+        new("📋", "Reports",   "/portal/reports"),
     ];
 
     private List<Portal.Models.Location> _locations  = [];
     private int                          _selectedId;
+
+    private bool _graphsLoading;
+    private List<DashboardService.DailyTotal> _eodData     = [];
+    private List<DashboardService.DailyTotal> _payableData = [];
+    private List<DashboardService.DailyTotal> _checkData   = [];
+    private List<DashboardService.DailyTotal> _payrollData = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,19 +125,27 @@
 
         if (_locations.Count == 1 && !LocationSession.HasLocation)
             ApplyLocation(_locations[0]);
+
+        if (LocationSession.HasLocation)
+            await LoadGraphsAsync();
     }
 
-    private void OnLocationChanged(ChangeEventArgs e)
+    private async Task OnLocationChanged(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out var id) && id > 0)
         {
             var loc = _locations.FirstOrDefault(l => l.LocationID == id);
-            if (loc is not null) ApplyLocation(loc);
+            if (loc is not null)
+            {
+                ApplyLocation(loc);
+                await LoadGraphsAsync();
+            }
         }
         else
         {
             _selectedId = 0;
             LocationSession.Clear();
+            _eodData = []; _payableData = []; _checkData = []; _payrollData = [];
         }
     }
 
@@ -116,5 +153,20 @@
     {
         _selectedId = loc.LocationID;
         LocationSession.Select(loc.LocationID, loc.Code, loc.Name);
+    }
+
+    private async Task LoadGraphsAsync()
+    {
+        _graphsLoading = true;
+        StateHasChanged();
+        var id = LocationSession.SelectedLocationID;
+        var results = await Task.WhenAll(
+            DashboardSvc.GetEodSalesWeekAsync(id),
+            DashboardSvc.GetPayablesWeekAsync(id),
+            DashboardSvc.GetChecksWeekAsync(id),
+            DashboardSvc.GetPayrollWeekAsync(id));
+        _eodData = results[0]; _payableData = results[1];
+        _checkData = results[2]; _payrollData = results[3];
+        _graphsLoading = false;
     }
 }

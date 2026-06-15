@@ -107,7 +107,7 @@ public sealed class ChartOfAccountsService
     {
         var sql = $"""
             SELECT [AccountID],ISNULL([FullAccountString],[AccountName]),
-                   ISNULL([AccountDescription],''),[IsActive],
+                   ISNULL(NULLIF([AccountDescription],''),[AccountName]),[IsActive],
                    ISNULL([Seg1Value],''),ISNULL([Seg2Value],''),ISNULL([Seg3Value],''),
                    ISNULL([Seg4Value],''),ISNULL([Seg5Value],''),ISNULL([Seg6Value],''),[CreatedAt]
             FROM   [dbo].[ChartOfAccounts]
@@ -201,12 +201,26 @@ public sealed class ChartOfAccountsService
         var ws = wb.Worksheets.First();
         var headers = ReadHeaders(ws);
         int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+        // Collect account→category mappings for the post-import sync pass
+        var categoryMap = new List<(string FullAccount, string CategoryName)>();
+
         for (int row = 2; row <= lastRow; row++)
         {
             string Get(string key) => headers.TryGetValue(key, out var c) ? ws.Cell(row, c).GetString().Trim() : string.Empty;
-            try   { await UpsertAsync(Get("Account Name"), Get("Account Description"), Get("Account Category"), Get("Account Type"), Get("Account"), IsActiveVal(Get("Active")), segDelimiter, result, ct); }
+            var acct = Get("Account"); var cat = Get("Account Category");
+            if (!string.IsNullOrWhiteSpace(acct) && !string.IsNullOrWhiteSpace(cat))
+                categoryMap.Add((acct, cat));
+            try   { await UpsertAsync(Get("Account Name"), Get("Account Description"), cat, Get("Account Type"), acct, IsActiveVal(Get("Active")), segDelimiter, result, ct); }
             catch (Exception ex) { result.Errors.Add($"Row {row}: {ex.Message}"); result.RowsSkipped++; }
         }
+
+        // Explicit category sync: re-apply CategoryID by name for every row that specified a category.
+        // This is a belt-and-suspenders pass that eliminates any nullable/boxing edge case in the
+        // per-row UPDATE and ensures stale CategoryIDs from prior imports are corrected.
+        if (categoryMap.Count > 0)
+            await SyncCategoriesByNameAsync(categoryMap, result, ct);
+
         return result;
     }
 
@@ -220,6 +234,9 @@ public sealed class ChartOfAccountsService
             .Select((h, i) => (h.Trim(), i))
             .Where(x => !string.IsNullOrEmpty(x.Item1))
             .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
+
+        var categoryMap = new List<(string FullAccount, string CategoryName)>();
+
         int lineNum = 1; string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)
         {
@@ -227,9 +244,16 @@ public sealed class ChartOfAccountsService
             if (string.IsNullOrWhiteSpace(line)) continue;
             var cols = ParseLine(line, delimiter);
             string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
-            try   { await UpsertAsync(Get("Account Name"), Get("Account Description"), Get("Account Category"), Get("Account Type"), Get("Account"), IsActiveVal(Get("Active")), segDelimiter, result, ct); }
+            var acct = Get("Account"); var cat = Get("Account Category");
+            if (!string.IsNullOrWhiteSpace(acct) && !string.IsNullOrWhiteSpace(cat))
+                categoryMap.Add((acct, cat));
+            try   { await UpsertAsync(Get("Account Name"), Get("Account Description"), cat, Get("Account Type"), acct, IsActiveVal(Get("Active")), segDelimiter, result, ct); }
             catch (Exception ex) { result.Errors.Add($"Line {lineNum}: {ex.Message}"); result.RowsSkipped++; }
         }
+
+        if (categoryMap.Count > 0)
+            await SyncCategoriesByNameAsync(categoryMap, result, ct);
+
         return result;
     }
 
@@ -270,21 +294,52 @@ public sealed class ChartOfAccountsService
 
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
-        await using var check = new SqlCommand(
-            "SELECT [AccountID] FROM [dbo].[ChartOfAccounts] WHERE [AccountName]=@N;", conn);
-        check.Parameters.AddWithValue("@N", displayName);
-        var existing = await check.ExecuteScalarAsync(ct);
+        // When a GL account string is provided, match on it (covers both old records where the
+        // code was stored in AccountName and new records where it lives in FullAccountString).
+        // Fall back to matching by display name when no GL string is present.
+        // Lookup priority:
+        //  1. FullAccountString exact match  (normal update path)
+        //  2. AccountName matches the GL code (old imports that stored code as name)
+        //  3. AccountName matches displayName (re-import with corrected FullAccountString,
+        //     e.g. BAR-100-xxxx → BAR-001-xxxx; avoids UNIQUE constraint on AccountName)
+        object? existing = null;
+        if (!string.IsNullOrWhiteSpace(fullAccountString))
+        {
+            // Step 1 & 2: match by FullAccountString OR by AccountName = GL code
+            await using var chk1 = new SqlCommand(
+                "SELECT TOP 1 [AccountID] FROM [dbo].[ChartOfAccounts] WHERE [FullAccountString]=@K OR [AccountName]=@K;", conn);
+            chk1.Parameters.AddWithValue("@K", fullAccountString.Trim());
+            existing = await chk1.ExecuteScalarAsync(ct);
+
+            // Step 3: if still not found, match by display name so a corrected GL string
+            //         updates the existing row instead of hitting the UNIQUE constraint.
+            if (existing is null or DBNull)
+            {
+                await using var chk2 = new SqlCommand(
+                    "SELECT TOP 1 [AccountID] FROM [dbo].[ChartOfAccounts] WHERE [AccountName]=@N;", conn);
+                chk2.Parameters.AddWithValue("@N", displayName);
+                existing = await chk2.ExecuteScalarAsync(ct);
+            }
+        }
+        else
+        {
+            await using var chk = new SqlCommand(
+                "SELECT TOP 1 [AccountID] FROM [dbo].[ChartOfAccounts] WHERE [AccountName]=@K;", conn);
+            chk.Parameters.AddWithValue("@K", displayName);
+            existing = await chk.ExecuteScalarAsync(ct);
+        }
 
         if (existing is int id)
         {
             await using var upd = new SqlCommand("""
                 UPDATE [dbo].[ChartOfAccounts]
-                SET [AccountDescription]=@Desc,[CategoryID]=@Cat,[TypeID]=@Type,[IsActive]=@Active,
+                SET [AccountName]=@Name,[AccountDescription]=@Desc,[CategoryID]=@Cat,[TypeID]=@Type,[IsActive]=@Active,
                     [FullAccountString]=@Full,[Seg1Value]=@S1,[Seg2Value]=@S2,[Seg3Value]=@S3,
                     [Seg4Value]=@S4,[Seg5Value]=@S5,[Seg6Value]=@S6
                 WHERE [AccountID]=@ID;
                 """, conn);
             upd.Parameters.AddWithValue("@ID",    id);
+            upd.Parameters.AddWithValue("@Name",  displayName);
             upd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description)        ?? DBNull.Value);
             upd.Parameters.AddWithValue("@Cat",   (object?)categoryID                       ?? DBNull.Value);
             upd.Parameters.AddWithValue("@Type",  (object?)typeID                            ?? DBNull.Value);
@@ -311,6 +366,37 @@ public sealed class ChartOfAccountsService
             AddSegParams(ins, Seg(0), Seg(1), Seg(2), Seg(3), Seg(4), Seg(5));
             await ins.ExecuteNonQueryAsync(ct);
             result.AccountsCreated++;
+        }
+    }
+
+    // ── Post-import category sync ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Second-pass UPDATE: for each (FullAccountString, CategoryName) pair collected during import,
+    /// look up the CategoryID by name and write it directly.  This bypasses the per-row C# nullable
+    /// resolution and ensures stale CategoryIDs from previous imports are always overwritten.
+    /// </summary>
+    private async Task SyncCategoriesByNameAsync(
+        List<(string FullAccount, string CategoryName)> map,
+        ImportResult result, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(_cs);
+        await conn.OpenAsync(ct);
+
+        const string sql = """
+            UPDATE a
+            SET    a.[CategoryID] = c.[CategoryID]
+            FROM   [dbo].[ChartOfAccounts]   a
+            JOIN   [dbo].[AccountCategories] c ON c.[Name] = @CatName
+            WHERE  a.[FullAccountString] = @Acct OR a.[AccountName] = @Acct;
+            """;
+
+        foreach (var (acct, catName) in map)
+        {
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@CatName", catName);
+            cmd.Parameters.AddWithValue("@Acct",    acct);
+            result.CategoriesSynced += await cmd.ExecuteNonQueryAsync(ct);
         }
     }
 

@@ -62,6 +62,7 @@ builder.Services.AddSingleton<ChartOfAccountsService>(sp => new ChartOfAccountsS
 builder.Services.AddSingleton<ItemService>(_ => new ItemService(connectionString));
 builder.Services.AddSingleton<ShippingMethodService>(_ => new ShippingMethodService(connectionString));
 builder.Services.AddSingleton<PayableService>(_ => new PayableService(connectionString));
+builder.Services.AddSingleton<PayableTermService>(_ => new PayableTermService(connectionString));
 builder.Services.AddSingleton<EodRowService>(_ => new EodRowService(connectionString));
 builder.Services.AddSingleton<EodColumnService>(_ => new EodColumnService(connectionString));
 builder.Services.AddSingleton<EodSectionService>(_ => new EodSectionService(connectionString));
@@ -77,6 +78,8 @@ builder.Services.AddSingleton<PayrollRunService>(_ => new PayrollRunService(conn
 builder.Services.AddSingleton<LocationService>(_ => new LocationService(connectionString));
 builder.Services.AddSingleton<DepartmentService>(_ => new DepartmentService(connectionString));
 builder.Services.AddSingleton<CoaSegmentsService>(_ => new CoaSegmentsService(connectionString));
+builder.Services.AddSingleton<DashboardService>(_ => new DashboardService(connectionString));
+builder.Services.AddSingleton<ReportService>(_ => new ReportService(connectionString));
 builder.Services.AddScoped<LocationSessionService>();
 
 // ── Authentication ────────────────────────────────────────────────────────────

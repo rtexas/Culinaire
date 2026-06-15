@@ -1,0 +1,112 @@
+@using Portal.Services
+
+<div style="background:var(--color-bg-card);border:1px solid var(--color-border);border-radius:8px;padding:16px 16px 12px;">
+    <div style="font-size:13px;font-weight:600;color:var(--color-text);margin-bottom:10px;">@Title</div>
+
+    @if (_hasData)
+    {
+        @((MarkupString)_svg)
+    }
+    else
+    {
+        <div style="height:160px;display:flex;align-items:center;justify-content:center;
+                    color:var(--color-text-muted);font-size:12px;font-style:italic;">
+            No submitted data in the last 7 days
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string                             Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public List<DashboardService.DailyTotal> Data  { get; set; } = [];
+    [Parameter]                 public string                             Color { get; set; } = "#2B6B35";
+
+    private string _svg     = string.Empty;
+    private bool   _hasData;
+
+    protected override void OnParametersSet() => Build();
+
+    private void Build()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var days  = Enumerable.Range(0, 7)
+            .Select(i => today.AddDays(i - 6))
+            .Select(d => (Date: d, Total: Data.FirstOrDefault(x => x.Date == d)?.Total ?? 0m))
+            .ToList();
+
+        _hasData = days.Any(d => d.Total > 0);
+        if (!_hasData) return;
+
+        const int W = 480; const int H = 190;
+        const int ml = 58;  const int mr = 10;
+        const int mt = 10;  const int mb = 32;
+        int pw = W - ml - mr;
+        int ph = H - mt - mb;
+
+        decimal maxVal  = days.Max(d => d.Total);
+        decimal niceMax = NiceCeil(maxVal);
+        decimal yStep   = niceMax / 4;
+
+        double Xf(int i)     => ml + i * pw / 6.0;
+        double Yf(decimal v) => mt + ph - (double)(v / niceMax) * ph;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg viewBox=\"0 0 {W} {H}\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;height:auto;display:block;\">");
+
+        // Y-axis grid lines + labels
+        for (int t = 0; t <= 4; t++)
+        {
+            decimal v  = yStep * t;
+            double  yy = Yf(v);
+            sb.Append($"<line x1=\"{ml}\" y1=\"{yy:F1}\" x2=\"{W - mr}\" y2=\"{yy:F1}\" stroke=\"#e5e7eb\" stroke-width=\"1\"/>");
+            sb.Append($"<text x=\"{ml - 4}\" y=\"{yy:F1}\" text-anchor=\"end\" dominant-baseline=\"middle\" font-size=\"9\" fill=\"#9ca3af\">{Fmt(v)}</text>");
+        }
+
+        // X-axis date labels
+        for (int i = 0; i < days.Count; i++)
+        {
+            double xx = Xf(i);
+            sb.Append($"<text x=\"{xx:F1}\" y=\"{H - mb + 14}\" text-anchor=\"middle\" font-size=\"9\" fill=\"#9ca3af\">{days[i].Date:M/d}</text>");
+        }
+
+        // Axes
+        sb.Append($"<line x1=\"{ml}\" y1=\"{mt}\" x2=\"{ml}\" y2=\"{H - mb}\" stroke=\"#d1d5db\" stroke-width=\"1\"/>");
+        sb.Append($"<line x1=\"{ml}\" y1=\"{H - mb}\" x2=\"{W - mr}\" y2=\"{H - mb}\" stroke=\"#d1d5db\" stroke-width=\"1\"/>");
+
+        // Fill polygon
+        var pts = string.Join(" ", days.Select((d, i) => $"{Xf(i):F1},{Yf(d.Total):F1}"));
+        string fillPts = $"{Xf(0):F1},{H - mb} {pts} {Xf(6):F1},{H - mb}";
+        sb.Append($"<polygon points=\"{fillPts}\" fill=\"{Color}\" opacity=\"0.08\"/>");
+
+        // Line
+        sb.Append($"<polyline points=\"{pts}\" fill=\"none\" stroke=\"{Color}\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+
+        // Dots with title tooltips
+        for (int i = 0; i < days.Count; i++)
+        {
+            double cx = Xf(i); double cy = Yf(days[i].Total);
+            sb.Append($"<circle cx=\"{cx:F1}\" cy=\"{cy:F1}\" r=\"3.5\" fill=\"{Color}\" stroke=\"white\" stroke-width=\"1.5\">");
+            sb.Append($"<title>{days[i].Date:MM/dd/yyyy}: {days[i].Total:C2}</title>");
+            sb.Append("</circle>");
+        }
+
+        sb.Append("</svg>");
+        _svg = sb.ToString();
+    }
+
+    private static decimal NiceCeil(decimal v)
+    {
+        if (v <= 0) return 100m;
+        decimal mag = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)v)));
+        foreach (var s in new[] { 1m, 2m, 2.5m, 5m, 10m })
+            if (s * mag >= v) return s * mag;
+        return 10m * mag;
+    }
+
+    private static string Fmt(decimal v) => v switch
+    {
+        >= 1_000_000m => $"{v / 1_000_000m:F1}M",
+        >= 1_000m     => $"{v / 1_000m:F0}K",
+        _             => $"{v:F0}"
+    };
+}

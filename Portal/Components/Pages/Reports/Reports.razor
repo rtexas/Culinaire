@@ -1,0 +1,264 @@
+@page "/portal/reports"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Portal.Models
+@using Microsoft.JSInterop
+@inject LocationSessionService LocationSession
+@inject ReportService           ReportSvc
+@inject IJSRuntime             JS
+
+<PageTitle>Reports — Culinaire Portal</PageTitle>
+
+<div class="portal-page">
+    <div class="module-header">
+        <h1 class="page-heading">Reports</h1>
+        @if (LocationSession.HasLocation)
+        {
+            <span style="font-size:13px;color:var(--color-text-muted);">
+                @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+            </span>
+        }
+    </div>
+
+    @if (!LocationSession.HasLocation)
+    {
+        <div class="alert alert-info" style="max-width:600px;margin-bottom:20px;">
+            No location selected — location-specific reports are disabled.
+            <a href="/portal">Select a location on the Dashboard</a> to enable them.
+            Security reports below are always available.
+        </div>
+    }
+
+    <!-- ── Module selectors ──────────────────────────────────────────────── -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:28px;">
+        @foreach (var group in _groups)
+        {
+            var needsLocation = group.Any(r => r.HasLocationFilter) && !LocationSession.HasLocation;
+            <div class="form-card" style="padding:14px 16px;@(needsLocation ? "opacity:.5;" : "")">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <span style="font-size:1.2rem;">@GroupIcon(group.Key)</span>
+                    <span style="font-weight:600;font-size:13px;color:var(--color-text);">@group.Key</span>
+                </div>
+                <select disabled="@needsLocation"
+                        @onchange="e => OnGroupSelect(group.Key, e.Value?.ToString())"
+                        style="width:100%;font-size:13px;">
+                    <option value="">— Select a report —</option>
+                    @foreach (var r in group)
+                    {
+                        <option value="@r.Id">@r.Title</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+
+        <!-- ── Active report panel ───────────────────────────────────────────── -->
+        @if (_active is not null)
+        {
+            <div class="form-card" style="margin-bottom:20px;">
+                <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:6px;">
+                    <h2 style="margin:0;font-size:16px;color:var(--color-primary);">@_active.Title</h2>
+                    <span style="font-size:12px;color:var(--color-text-muted);">@_active.Description</span>
+                </div>
+
+                <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;">
+                    @if (_active.HasDateFilter)
+                    {
+                        <div>
+                            <label class="form-label">From</label>
+                            <input type="date" class="form-input" style="width:155px;"
+                                   value="@_from.ToString("yyyy-MM-dd")"
+                                   @onchange="e => _from = DateOnly.Parse(e.Value!.ToString()!)" />
+                        </div>
+                        <div>
+                            <label class="form-label">To</label>
+                            <input type="date" class="form-input" style="width:155px;"
+                                   value="@_to.ToString("yyyy-MM-dd")"
+                                   @onchange="e => _to = DateOnly.Parse(e.Value!.ToString()!)" />
+                        </div>
+                    }
+                    <button class="btn btn-primary" @onclick="RunAsync" disabled="@_loading">
+                        @(_loading ? "Loading…" : "Run Report")
+                    </button>
+                    @if (_result is not null)
+                    {
+                        <button class="btn btn-secondary" @onclick="ExportAsync" disabled="@_exporting"
+                                title="Export to Excel">
+                            @(_exporting ? "Exporting…" : "⬇ Export to Excel")
+                        </button>
+                        <span style="font-size:12px;color:var(--color-text-muted);align-self:center;">
+                            @_result.Total row@(_result.Total == 1 ? "" : "s")
+                        </span>
+                    }
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-error" style="max-width:800px;margin-bottom:16px;">@_error</div>
+            }
+
+            @if (_result is not null)
+            {
+                @if (_result.Rows.Count == 0)
+                {
+                    <div style="padding:32px;text-align:center;color:var(--color-text-muted);
+                                font-size:13px;font-style:italic;background:var(--color-bg-card);
+                                border:1px solid var(--color-border);border-radius:8px;">
+                        No data found for the selected criteria.
+                    </div>
+                }
+                else
+                {
+                    <div style="overflow-x:auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in _result.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in _result.Rows)
+                                {
+                                    <tr>
+                                        @for (int i = 0; i < row.Length; i++)
+                                        {
+                                            <td class="@CellClass(row[i])">@FormatCell(row[i])</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                            @if (_result.Rows.Count > 1 && _numericCols.Any())
+                            {
+                                <tfoot>
+                                    <tr>
+                                        @for (int i = 0; i < _result.Columns.Length; i++)
+                                        {
+                                            @if (i == 0)
+                                            {
+                                                <th>Totals</th>
+                                            }
+                                            else if (_numericCols.Contains(i))
+                                            {
+                                                <th class="text-right">@FormatCell(ColSum(i))</th>
+                                            }
+                                            else
+                                            {
+                                                <th></th>
+                                            }
+                                        }
+                                    </tr>
+                                </tfoot>
+                            }
+                        </table>
+                    </div>
+                }
+            }
+        }
+    </div>
+
+@code {
+    private IEnumerable<IGrouping<string, ReportDef>> _groups =
+        ReportService.All.GroupBy(r => r.Group);
+
+    private ReportDef?    _active;
+    private DateOnly      _from    = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+    private DateOnly      _to      = DateOnly.FromDateTime(DateTime.Today);
+    private ReportResult? _result;
+    private bool          _loading;
+    private bool          _exporting;
+    private string        _error   = string.Empty;
+    private HashSet<int>  _numericCols = [];
+
+    private async Task OnGroupSelect(string group, string? id)
+    {
+        if (string.IsNullOrEmpty(id)) { _active = null; _result = null; return; }
+        _active  = ReportService.Find(id);
+        _result  = null;
+        _error   = string.Empty;
+        _numericCols.Clear();
+        if (_active is not null)
+            await RunAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_result is null || _active is null) return;
+        _exporting = true;
+        StateHasChanged();
+        try
+        {
+            var bytes    = ReportService.ExportToExcel(_result, _active.Title);
+            var b64      = Convert.ToBase64String(bytes);
+            var fromStr  = _active.HasDateFilter ? _from.ToString("yyyy-MM-dd") : "All";
+            var toStr    = _active.HasDateFilter ? _to.ToString("yyyy-MM-dd")   : "All";
+            var safe     = static (string s) => string.Concat(s.Split(System.IO.Path.GetInvalidFileNameChars()));
+            var fileName = $"{safe(_active.Group)}_{safe(_active.Title)}_{fromStr}_{toStr}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName, b64);
+        }
+        finally { _exporting = false; }
+    }
+
+    private async Task RunAsync()
+    {
+        if (_active is null) return;
+        _loading = true; _error = string.Empty; _result = null;
+        StateHasChanged();
+        try
+        {
+            var locId = _active.HasLocationFilter ? LocationSession.SelectedLocationID : 0;
+        _result = await ReportSvc.RunAsync(_active.Id, locId, _from, _to);
+            BuildNumericCols();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private void BuildNumericCols()
+    {
+        _numericCols.Clear();
+        if (_result is null || _result.Rows.Count == 0) return;
+        var first = _result.Rows[0];
+        for (int i = 0; i < first.Length; i++)
+            if (first[i] is decimal or int or long or double or float)
+                _numericCols.Add(i);
+    }
+
+    private decimal ColSum(int col) =>
+        _result?.Rows.Sum(r => r[col] switch
+        {
+            decimal d => d,
+            int     i => (decimal)i,
+            long    l => (decimal)l,
+            _         => 0m
+        }) ?? 0m;
+
+    private static string FormatCell(object? v) => v switch
+    {
+        null    => string.Empty,
+        decimal d when d == Math.Floor(d) && d >= 1000 => d.ToString("N0"),
+        decimal d => d.ToString("N2"),
+        int   i => i.ToString("N0"),
+        long  l => l.ToString("N0"),
+        _       => v.ToString() ?? string.Empty
+    };
+
+    private static string CellClass(object? v) => v switch
+    {
+        decimal or int or long or double or float => "text-right",
+        _ => string.Empty
+    };
+
+    private static string GroupIcon(string group) => group switch
+    {
+        "EOD Sales"          => "📊",
+        "Payables"           => "💰",
+        "Checks"             => "🧾",
+        "Payroll"            => "💼",
+        "Financial Overview" => "📈",
+        "Security"           => "🔒",
+        _                    => "📋"
+    };
+}

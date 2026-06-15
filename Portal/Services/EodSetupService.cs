@@ -74,7 +74,8 @@ public sealed class EodSetupService
         var rows = new List<EodSetupRowDef>();
         await using (var cmd = new SqlCommand("""
             SELECT sr.[SetupRowID],sr.[RowID],ro.[Name],ISNULL(ro.[Description],''),
-                   sr.[DisplayOrder],ro.[SectionID],ISNULL(sec.[Name],''),ISNULL(sec.[Multiplier],1)
+                   sr.[DisplayOrder],ro.[SectionID],ISNULL(sec.[Name],''),ISNULL(sec.[Multiplier],1),
+                   ISNULL(sec.[UseInEodSales],1)
             FROM   [dbo].[EodSetupRows] sr
             JOIN   [dbo].[EodRows]     ro  ON ro.[RowID]      = sr.[RowID]
             LEFT JOIN [dbo].[EodSections] sec ON sec.[SectionID] = ro.[SectionID]
@@ -87,10 +88,11 @@ public sealed class EodSetupService
             while (await r.ReadAsync(ct))
                 rows.Add(new EodSetupRowDef
                 {
-                    SetupRowID   = r.GetInt32(0), RowID      = r.GetInt32(1),
-                    RowName      = r.GetString(2), RowDesc   = r.GetString(3),
-                    DisplayOrder = r.GetInt32(4),  SectionID = r.GetInt32(5),
-                    SectionName  = r.GetString(6), Multiplier = r.GetInt32(7),
+                    SetupRowID    = r.GetInt32(0),  RowID        = r.GetInt32(1),
+                    RowName       = r.GetString(2), RowDesc      = r.GetString(3),
+                    DisplayOrder  = r.GetInt32(4),  SectionID    = r.GetInt32(5),
+                    SectionName   = r.GetString(6), Multiplier   = r.GetInt32(7),
+                    UseInEodSales = r.GetBoolean(8),
                 });
         }
 

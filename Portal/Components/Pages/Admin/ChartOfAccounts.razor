@@ -153,6 +153,8 @@
                 skipped: @_importResult.RowsSkipped.
                 @if (_importResult.CategoriesCreated > 0)
                 { <span> New categories: @_importResult.CategoriesCreated.</span> }
+                @if (_importResult.CategoriesSynced > 0)
+                { <span> Categories synced: @_importResult.CategoriesSynced.</span> }
                 @if (_importResult.TypesCreated > 0)
                 { <span> New types: @_importResult.TypesCreated.</span> }
                 @if (_importResult.HasErrors)

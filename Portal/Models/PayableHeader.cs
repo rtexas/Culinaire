@@ -7,6 +7,8 @@ public sealed class PayableHeader
     public string    VendorName         { get; set; } = string.Empty;
     public string    InvoiceNumber      { get; set; } = string.Empty;
     public DateTime  InvoiceDate        { get; set; } = DateTime.Today;
+    public int?      DueDateTermID      { get; set; }
+    public string    DueDateTermName   { get; set; } = string.Empty;
     public DateTime? DueDate            { get; set; }
     public int?      ShippingMethodID   { get; set; }
     public string    ShippingMethodName { get; set; } = string.Empty;

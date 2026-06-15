@@ -12,6 +12,8 @@
     <p class="page-sub">
         Define sections used on the EOD Sales entry grid. Each section groups rows and applies a
         multiplier: <strong>1</strong> = add, <strong>−1</strong> = subtract, <strong>0</strong> = neutral / display only.
+        <strong>Used in EOD Sales</strong> controls whether the section total is included in the Grand Total:
+        <strong>Yes</strong> = included, <strong>No</strong> = rows and totals use the multiplier but are excluded from the Grand Total.
     </p>
 
     <!-- ── Import ─────────────────────────────────────────────────────────── -->
@@ -19,7 +21,9 @@
         <h2 class="form-section-title">Import Sections</h2>
         <p style="margin:0 0 12px;font-size:13px;color:var(--color-text-muted);">
             Supported: Excel (.xlsx) or any delimited text file. Required column: <strong>Name</strong>.
-            Optional: <strong>Description</strong>, <strong>Multiplier</strong> (−1, 0, or 1 — defaults to 1).
+            Optional: <strong>Description</strong>, <strong>Multiplier</strong> (−1, 0, or 1 — defaults to 1),
+            <strong>Used in EOD Sales</strong> (0/false or 1/true — defaults to 1),
+            <strong>Used in EOD Graph</strong> (0/false or 1/true — defaults to 0).
             Existing records matched by Name are updated; new Names are inserted.
         </p>
         <div class="form-row" style="max-width:480px;">
@@ -78,6 +82,20 @@
                 <option value="0">0 — Neutral / Display Only</option>
             </select>
         </div>
+        <div class="form-row" style="max-width:280px;">
+            <label>Used in EOD Sales</label>
+            <select @bind="_useInEodSales">
+                <option value="true">Yes — Include in Grand Total</option>
+                <option value="false">No — Exclude from Grand Total</option>
+            </select>
+        </div>
+        <div class="form-row" style="max-width:280px;">
+            <label>Used in EOD Graph</label>
+            <select @bind="_useInEodGraph">
+                <option value="true">Yes — Include in EOD Graph</option>
+                <option value="false">No — Exclude from EOD Graph</option>
+            </select>
+        </div>
         <div class="form-actions">
             <button class="btn-primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(_name)">
                 @(_editId == 0 ? "Add" : "Save Changes")
@@ -106,6 +124,8 @@
                         <th>Name</th>
                         <th>Description</th>
                         <th style="width:130px;text-align:center;">Multiplier</th>
+                        <th style="width:160px;text-align:center;">Used in EOD Sales</th>
+                        <th style="width:150px;text-align:center;">Used in EOD Graph</th>
                         <th style="width:120px;text-align:center;">Actions</th>
                     </tr>
                     <tr class="filter-row">
@@ -113,12 +133,14 @@
                         <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
                         <th></th>
                         <th></th>
+                        <th></th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (Filtered.Count == 0 && _items.Count > 0)
                     {
-                        <tr><td colspan="4" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                        <tr><td colspan="6" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
                     }
                     @foreach (var item in Filtered)
                     {
@@ -137,6 +159,26 @@
                                 <span class="status-badge" style="background:color-mix(in srgb,@color 12%,transparent);color:@color;">
                                     @badge
                                 </span>
+                            </td>
+                            <td style="text-align:center;">
+                                @if (item.UseInEodSales)
+                                {
+                                    <span class="status-badge" style="background:color-mix(in srgb,var(--color-primary) 12%,transparent);color:var(--color-primary);">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="status-badge" style="background:color-mix(in srgb,var(--color-text-muted) 12%,transparent);color:var(--color-text-muted);">No</span>
+                                }
+                            </td>
+                            <td style="text-align:center;">
+                                @if (item.UseInEodGraph)
+                                {
+                                    <span class="status-badge" style="background:color-mix(in srgb,var(--color-primary) 12%,transparent);color:var(--color-primary);">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="status-badge" style="background:color-mix(in srgb,var(--color-text-muted) 12%,transparent);color:var(--color-text-muted);">No</span>
+                                }
                             </td>
                             <td style="text-align:center;white-space:nowrap;">
                                 <button class="btn-sm btn-secondary" @onclick="() => BeginEdit(item)">Edit</button>
@@ -176,11 +218,13 @@
     private bool                        _importing;
     private Portal.Models.ImportResult? _importResult;
 
-    private int    _editId      = 0;
-    private string _name        = string.Empty;
-    private string _description = string.Empty;
-    private int    _multiplier  = 1;
-    private string _message     = string.Empty;
+    private int    _editId        = 0;
+    private string _name          = string.Empty;
+    private string _description   = string.Empty;
+    private int    _multiplier    = 1;
+    private bool   _useInEodSales = true;
+    private bool   _useInEodGraph = false;
+    private string _message       = string.Empty;
     private bool   _isError;
     private Portal.Models.EodSection? _deleteTarget;
 
@@ -215,19 +259,21 @@
     private void BeginEdit(Portal.Models.EodSection item)
     {
         _editId = item.SectionID; _name = item.Name; _description = item.Description;
-        _multiplier = item.Multiplier; _message = string.Empty;
+        _multiplier = item.Multiplier; _useInEodSales = item.UseInEodSales; _useInEodGraph = item.UseInEodGraph; _message = string.Empty;
     }
 
-    private void CancelEdit() { _editId = 0; _name = string.Empty; _description = string.Empty; _multiplier = 1; }
+    private void CancelEdit() { _editId = 0; _name = string.Empty; _description = string.Empty; _multiplier = 1; _useInEodSales = true; _useInEodGraph = false; }
 
     private async Task SaveAsync()
     {
         var item = new Portal.Models.EodSection
         {
-            SectionID   = _editId,
-            Name        = _name,
-            Description = _description,
-            Multiplier  = _multiplier,
+            SectionID    = _editId,
+            Name         = _name,
+            Description  = _description,
+            Multiplier    = _multiplier,
+            UseInEodSales = _useInEodSales,
+            UseInEodGraph = _useInEodGraph,
         };
         try
         {

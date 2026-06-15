@@ -32,9 +32,10 @@ public sealed class EodSetupRowDef
     public string RowName      { get; set; } = string.Empty;
     public string RowDesc      { get; set; } = string.Empty;
     public int    DisplayOrder { get; set; }
-    public int    SectionID    { get; set; }
-    public string SectionName  { get; set; } = string.Empty;
-    public int    Multiplier   { get; set; } = 1;
+    public int    SectionID      { get; set; }
+    public string SectionName    { get; set; } = string.Empty;
+    public int    Multiplier     { get; set; } = 1;
+    public bool   UseInEodSales  { get; set; } = true;
 }
 
 public sealed class EodSetupCell

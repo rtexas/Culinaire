@@ -82,6 +82,23 @@ public sealed class EodRowService
             : await ImportTextAsync(ms, delimiter, ct);
     }
 
+    // Columns that MUST be present for this file to be accepted as an EOD Rows import.
+    private static readonly string[] RequiredColumns = ["Name", "Section"];
+
+    private static ImportResult? ValidateHeaders(IReadOnlySet<string> found)
+    {
+        var missing = RequiredColumns
+            .Where(c => !found.Contains(c))
+            .ToList();
+        if (missing.Count == 0) return null;
+        var result = new ImportResult();
+        result.Errors.Add(
+            $"Wrong file — this does not look like an EOD Rows file. " +
+            $"Missing required column(s): {string.Join(", ", missing)}. " +
+            $"Expected columns include: {string.Join(", ", RequiredColumns)}.");
+        return result;
+    }
+
     private async Task<ImportResult> ImportExcelAsync(Stream stream, CancellationToken ct)
     {
         var result = new ImportResult();
@@ -94,6 +111,7 @@ public sealed class EodRowService
             var h = ws.Cell(1, c).GetString().Trim();
             if (!string.IsNullOrEmpty(h)) headers[h] = c;
         }
+        if (ValidateHeaders(headers.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)) is { } bad) return bad;
         int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
         for (int row = 2; row <= lastRow; row++)
         {
@@ -114,6 +132,7 @@ public sealed class EodRowService
             .Select((h, i) => (h.Trim(), i))
             .Where(x => !string.IsNullOrEmpty(x.Item1))
             .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
+        if (ValidateHeaders(headers.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)) is { } bad) return bad;
         int lineNum = 1;
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)

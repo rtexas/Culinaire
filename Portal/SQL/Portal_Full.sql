@@ -342,6 +342,26 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[Modules] WHERE [ModuleName] = 'Payroll')
     VALUES ('Payroll','Payroll','/portal/payroll','icon-payroll',4,1);
 GO
 
+-- PayableTerms seed
+MERGE [dbo].[PayableTerms] AS tgt
+USING (VALUES
+    ('Net 10',        'Due 10 days after invoice date',                 'NET10',  10, 'Invoice'),
+    ('Net 15',        'Due 15 days after invoice date',                 'NET15',  15, 'Invoice'),
+    ('Net 30',        'Due 30 days after invoice date',                 'NET30',  30, 'Invoice'),
+    ('Net 45',        'Due 45 days after invoice date',                 'NET45',  45, 'Invoice'),
+    ('Net 60',        'Due 60 days after invoice date',                 'NET60',  60, 'Invoice'),
+    ('Net 90',        'Due 90 days after invoice date',                 'NET90',  90, 'Invoice'),
+    ('Due on Receipt','Due immediately upon receipt',                   'DOR',     0, 'Invoice'),
+    ('1st of Month',  'Due the 1st of the following month',             'DOM01',   1, 'FixedDOM'),
+    ('15th of Month', 'Due the 15th of the current/next month',         'DOM15',  15, 'FixedDOM'),
+    ('EOM',           'Due end of current month (approx 30 days today)','EOM',    30, 'Current')
+) AS src ([Name],[Description],[ExternalCode],[NumberOfDays],[DateBasis])
+ON tgt.[Name] = src.[Name]
+WHEN NOT MATCHED THEN
+    INSERT ([Name],[Description],[ExternalCode],[NumberOfDays],[DateBasis])
+    VALUES (src.[Name],src.[Description],src.[ExternalCode],src.[NumberOfDays],src.[DateBasis]);
+GO
+
 -- =============================================================================
 -- ITEMS TABLE
 -- =============================================================================
@@ -453,16 +473,34 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[EodSections]'))
 BEGIN
     CREATE TABLE [dbo].[EodSections] (
-        [SectionID]   INT           NOT NULL IDENTITY(1,1),
-        [Name]        NVARCHAR(200) NOT NULL,
-        [Description] NVARCHAR(500) NULL,
-        [Multiplier]  INT           NOT NULL CONSTRAINT [DF_EodSections_Multiplier] DEFAULT (1),
-        [CreatedAt]   DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodSections_CreatedAt]  DEFAULT (GETDATE()),
+        [SectionID]     INT           NOT NULL IDENTITY(1,1),
+        [Name]          NVARCHAR(200) NOT NULL,
+        [Description]   NVARCHAR(500) NULL,
+        [Multiplier]    INT           NOT NULL CONSTRAINT [DF_EodSections_Multiplier]    DEFAULT (1),
+        [UseInEodSales] BIT           NOT NULL CONSTRAINT [DF_EodSections_UseInEodSales] DEFAULT (1),
+        [UseInEodGraph] BIT           NOT NULL CONSTRAINT [DF_EodSections_UseInEodGraph] DEFAULT (0),
+        [CreatedAt]     DATETIME2(0)  NOT NULL CONSTRAINT [DF_EodSections_CreatedAt]     DEFAULT (GETDATE()),
         CONSTRAINT [PK_EodSections]      PRIMARY KEY CLUSTERED ([SectionID] ASC),
         CONSTRAINT [UQ_EodSections_Name] UNIQUE ([Name]),
         CONSTRAINT [CK_EodSections_Mult] CHECK ([Multiplier] IN (-1, 0, 1))
     );
     PRINT 'Table [dbo].[EodSections] created.';
+END
+ELSE
+BEGIN
+    -- Add UseInEodSales column to existing installations
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[EodSections]') AND name = N'UseInEodSales')
+    BEGIN
+        ALTER TABLE [dbo].[EodSections]
+            ADD [UseInEodSales] BIT NOT NULL CONSTRAINT [DF_EodSections_UseInEodSales] DEFAULT (1);
+        PRINT 'Column [UseInEodSales] added to [dbo].[EodSections].';
+    END
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[EodSections]') AND name = N'UseInEodGraph')
+    BEGIN
+        ALTER TABLE [dbo].[EodSections]
+            ADD [UseInEodGraph] BIT NOT NULL CONSTRAINT [DF_EodSections_UseInEodGraph] DEFAULT (0);
+        PRINT 'Column [UseInEodGraph] added to [dbo].[EodSections].';
+    END
 END
 GO
 
@@ -619,6 +657,30 @@ BEGIN
 END
 GO
 
+-- PayableTerms
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayableTerms]'))
+BEGIN
+    CREATE TABLE [dbo].[PayableTerms]
+    (
+        [PayableTermID] INT           NOT NULL IDENTITY(1,1),
+        [Name]          NVARCHAR(100) NOT NULL,
+        [Description]   NVARCHAR(500) NULL,
+        [ExternalCode]  NVARCHAR(50)  NULL,
+        [NumberOfDays]  INT           NULL,
+        -- "Invoice"  = days after invoice date
+        -- "Current"  = days after current date
+        -- "FixedDOM" = fixed day of month (NumberOfDays = day number 1–31)
+        [DateBasis]     NVARCHAR(20)  NOT NULL CONSTRAINT [DF_PayTerms_DateBasis] DEFAULT ('Invoice'),
+        [CreatedAt]     DATETIME      NOT NULL CONSTRAINT [DF_PayTerms_CreatedAt] DEFAULT (GETDATE()),
+        [UpdatedAt]     DATETIME      NOT NULL CONSTRAINT [DF_PayTerms_UpdatedAt] DEFAULT (GETDATE()),
+        CONSTRAINT [PK_PayableTerms]      PRIMARY KEY CLUSTERED ([PayableTermID] ASC),
+        CONSTRAINT [UQ_PayableTerms_Name] UNIQUE ([Name]),
+        CONSTRAINT [CK_PayableTerms_Basis] CHECK ([DateBasis] IN ('Invoice','Current','FixedDOM'))
+    );
+    PRINT 'Table [dbo].[PayableTerms] created.';
+END
+GO
+
 -- PayableHeaders
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'[dbo].[PayableHeaders]'))
 BEGIN
@@ -629,6 +691,7 @@ BEGIN
         [InvoiceNumber]    NVARCHAR(100)  NOT NULL,
         [InvoiceDate]      DATE           NOT NULL,
         [DueDate]          DATE           NULL,
+        [DueDateTermID]    INT            NULL,
         [ShippingMethodID] INT            NULL,
         [ShippingCharge]   DECIMAL(18,4)  NOT NULL CONSTRAINT [DF_PayHdr_ShipCharge] DEFAULT (0),
         [TaxAmount]        DECIMAL(18,4)  NOT NULL CONSTRAINT [DF_PayHdr_TaxAmount]  DEFAULT (0),
@@ -638,11 +701,25 @@ BEGIN
         [CreatedAt]        DATETIME       NOT NULL CONSTRAINT [DF_PayHdr_CreatedAt]  DEFAULT (GETDATE()),
         [UpdatedAt]        DATETIME       NOT NULL CONSTRAINT [DF_PayHdr_UpdatedAt]  DEFAULT (GETDATE()),
         CONSTRAINT [PK_PayableHeaders]        PRIMARY KEY CLUSTERED ([PayableID] ASC),
-        CONSTRAINT [FK_PayHdr_Location]       FOREIGN KEY ([LocationID])       REFERENCES [dbo].[Locations]([LocationID]),
-        CONSTRAINT [FK_PayHdr_Vendor]         FOREIGN KEY ([VendorID])         REFERENCES [dbo].[Vendors]([VendorID]),
-        CONSTRAINT [FK_PayHdr_ShippingMethod] FOREIGN KEY ([ShippingMethodID]) REFERENCES [dbo].[ShippingMethods]([ShippingMethodID]) ON DELETE SET NULL
+        CONSTRAINT [FK_PayHdr_Location]       FOREIGN KEY ([LocationID])    REFERENCES [dbo].[Locations]([LocationID]),
+        CONSTRAINT [FK_PayHdr_Vendor]         FOREIGN KEY ([VendorID])      REFERENCES [dbo].[Vendors]([VendorID]),
+        CONSTRAINT [FK_PayHdr_ShippingMethod] FOREIGN KEY ([ShippingMethodID]) REFERENCES [dbo].[ShippingMethods]([ShippingMethodID]) ON DELETE SET NULL,
+        CONSTRAINT [FK_PayHdr_PayableTerm]    FOREIGN KEY ([DueDateTermID]) REFERENCES [dbo].[PayableTerms]([PayableTermID]) ON DELETE SET NULL
     );
     PRINT 'Table [dbo].[PayableHeaders] created.';
+END
+ELSE
+BEGIN
+    -- Add DueDateTermID to existing installations
+    IF NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID(N'[dbo].[PayableHeaders]') AND name = N'DueDateTermID')
+    BEGIN
+        ALTER TABLE [dbo].[PayableHeaders]
+            ADD [DueDateTermID] INT NULL
+                CONSTRAINT [FK_PayHdr_PayableTerm]
+                REFERENCES [dbo].[PayableTerms]([PayableTermID]) ON DELETE SET NULL;
+        PRINT 'Column [DueDateTermID] added to [dbo].[PayableHeaders].';
+    END
 END
 GO
 

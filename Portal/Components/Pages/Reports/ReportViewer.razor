@@ -1,0 +1,210 @@
+@page "/portal/reports/{ReportId}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Portal.Models
+@inject LocationSessionService LocationSession
+@inject ReportService           ReportSvc
+@inject NavigationManager       Nav
+
+<PageTitle>@(_def?.Title ?? "Report") — Culinaire Portal</PageTitle>
+
+@if (!LocationSession.HasLocation)
+{
+    <div class="portal-page">
+        <div class="alert alert-info">
+            No location selected. <a href="/portal">Return to Dashboard</a> and select a location first.
+        </div>
+    </div>
+}
+else if (_def is null)
+{
+    <div class="portal-page">
+        <div class="alert alert-error">Report not found.</div>
+        <a href="/portal/reports" class="btn btn-secondary" style="margin-top:12px;">← Back to Reports</a>
+    </div>
+}
+else
+{
+    <div class="portal-page">
+        <div class="module-header">
+            <h1 class="page-heading">@_def.Title</h1>
+            <span style="font-size:13px;color:var(--color-text-muted);">
+                @LocationSession.SelectedLocationCode — @LocationSession.SelectedLocationName
+            </span>
+        </div>
+
+        <p style="color:var(--color-text-muted);font-size:13px;margin-bottom:20px;">@_def.Description</p>
+
+        <!-- Filters -->
+        <div class="form-card" style="margin-bottom:20px;max-width:560px;">
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+                @if (_def.HasDateFilter)
+                {
+                    <div>
+                        <label class="form-label">From</label>
+                        <input type="date" class="form-input" style="width:160px;"
+                               value="@_from.ToString("yyyy-MM-dd")"
+                               @onchange="e => _from = DateOnly.Parse(e.Value!.ToString()!)" />
+                    </div>
+                    <div>
+                        <label class="form-label">To</label>
+                        <input type="date" class="form-input" style="width:160px;"
+                               value="@_to.ToString("yyyy-MM-dd")"
+                               @onchange="e => _to = DateOnly.Parse(e.Value!.ToString()!)" />
+                    </div>
+                }
+                <button class="btn btn-primary" @onclick="RunReportAsync" disabled="@_loading">
+                    @(_loading ? "Loading…" : "Run Report")
+                </button>
+                @if (_result is not null)
+                {
+                    <span style="font-size:12px;color:var(--color-text-muted);align-self:center;">
+                        @_result.Total row@(_result.Total == 1 ? "" : "s")
+                    </span>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error" style="max-width:800px;margin-bottom:16px;">@_error</div>
+        }
+
+        @if (_result is not null)
+        {
+            @if (_result.Rows.Count == 0)
+            {
+                <div style="padding:32px;text-align:center;color:var(--color-text-muted);
+                            font-size:13px;font-style:italic;background:var(--color-bg-card);
+                            border:1px solid var(--color-border);border-radius:8px;">
+                    No data found for the selected criteria.
+                </div>
+            }
+            else
+            {
+                <div class="table-wrapper" style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                @foreach (var col in _result.Columns)
+                                {
+                                    <th>@col</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _result.Rows)
+                            {
+                                <tr>
+                                    @for (int i = 0; i < row.Length; i++)
+                                    {
+                                        <td class="@CellClass(row[i])">@FormatCell(row[i])</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                        @if (_result.Rows.Count > 1 && _numericCols.Any())
+                        {
+                            <tfoot>
+                                <tr>
+                                    @for (int i = 0; i < _result.Columns.Length; i++)
+                                    {
+                                        @if (i == 0)
+                                        {
+                                            <th>Totals</th>
+                                        }
+                                        else if (_numericCols.Contains(i))
+                                        {
+                                            <th class="text-right">@FormatCell(ColSum(i))</th>
+                                        }
+                                        else
+                                        {
+                                            <th></th>
+                                        }
+                                    }
+                                </tr>
+                            </tfoot>
+                        }
+                    </table>
+                </div>
+            }
+        }
+
+        <div style="margin-top:24px;">
+            <a href="/portal/reports" class="btn btn-secondary">← Back to Reports</a>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string ReportId { get; set; } = string.Empty;
+
+    private ReportDef?   _def;
+    private DateOnly     _from    = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+    private DateOnly     _to      = DateOnly.FromDateTime(DateTime.Today);
+    private ReportResult? _result;
+    private bool         _loading;
+    private string       _error   = string.Empty;
+    private HashSet<int> _numericCols = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _def    = ReportService.Find(ReportId);
+        _result = null;
+        _error  = string.Empty;
+        if (_def is not null && LocationSession.HasLocation)
+            await RunReportAsync();
+    }
+
+    private async Task RunReportAsync()
+    {
+        if (_def is null) return;
+        _loading = true; _error = string.Empty; _result = null;
+        StateHasChanged();
+        try
+        {
+            _result = await ReportSvc.RunAsync(ReportId,
+                LocationSession.SelectedLocationID, _from, _to);
+            BuildNumericCols();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally { _loading = false; }
+    }
+
+    private void BuildNumericCols()
+    {
+        _numericCols.Clear();
+        if (_result is null || _result.Rows.Count == 0) return;
+        var first = _result.Rows[0];
+        for (int i = 0; i < first.Length; i++)
+            if (first[i] is decimal or int or long or double or float)
+                _numericCols.Add(i);
+    }
+
+    private decimal ColSum(int col) =>
+        _result?.Rows.Sum(r => r[col] switch
+        {
+            decimal d => d,
+            int     i => (decimal)i,
+            long    l => (decimal)l,
+            _         => 0m
+        }) ?? 0m;
+
+    private static string FormatCell(object? v) => v switch
+    {
+        null    => string.Empty,
+        decimal d when d == Math.Floor(d) && d >= 1000 => d.ToString("N0"),
+        decimal d => d.ToString("N2"),
+        int   i => i.ToString("N0"),
+        long  l => l.ToString("N0"),
+        _       => v.ToString() ?? string.Empty
+    };
+
+    private static string CellClass(object? v) => v switch
+    {
+        decimal or int or long or double or float => "text-right",
+        _ => string.Empty
+    };
+}

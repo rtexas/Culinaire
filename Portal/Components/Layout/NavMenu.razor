@@ -16,29 +16,57 @@
                 </div>
             }
 
-            <a class="nav-item @(IsActive("/portal") ? "active" : "")"
-               href="/portal" @onclick="() => OnNavigate.InvokeAsync()">
-                <span class="nav-icon">🏠</span>
-                <span class="nav-label">Dashboard</span>
-            </a>
+            <div class="nav-group-toggle @(_dashboardOpen ? "open" : "")" style="cursor:default;">
+                <a href="/portal" class="nav-group-link" @onclick="() => OnNavigate.InvokeAsync()">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-label">Dashboard</span>
+                </a>
+                <span class="nav-chevron" style="cursor:pointer;" @onclick="ToggleDashboard" @onclick:stopPropagation>
+                    @(_dashboardOpen ? "▴" : "▾")
+                </span>
+            </div>
 
-            @foreach (var item in _navItems)
+            @if (_dashboardOpen)
             {
-                @if (LocationSession.HasLocation)
-                {
-                    <a class="nav-item @(IsActive(item.Url) ? "active" : "")"
-                       href="@item.Url" @onclick="() => OnNavigate.InvokeAsync()">
-                        <span class="nav-icon">@item.Icon</span>
-                        <span class="nav-label">@item.Label</span>
+                <div class="nav-submenu">
+                    <a class="nav-item @(IsActive("/portal") ? "active" : "")"
+                       href="/portal" @onclick="() => OnNavigate.InvokeAsync()">
+                        <span class="nav-label">Home</span>
                     </a>
-                }
-                else
-                {
-                    <span class="nav-item nav-item-disabled" title="Select a location on the Dashboard first">
-                        <span class="nav-icon">@item.Icon</span>
-                        <span class="nav-label">@item.Label</span>
-                    </span>
-                }
+                    @foreach (var item in _navItems)
+                    {
+                        @if (LocationSession.HasLocation)
+                        {
+                            <a class="nav-item @(IsActive(item.Url) ? "active" : "")"
+                               href="@item.Url" @onclick="() => OnNavigate.InvokeAsync()">
+                                <span class="nav-icon">@item.Icon</span>
+                                <span class="nav-label">@item.Label</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <span class="nav-item nav-item-disabled" title="Select a location on the Dashboard first">
+                                <span class="nav-icon">@item.Icon</span>
+                                <span class="nav-label">@item.Label</span>
+                            </span>
+                        }
+                    }
+                    @if (LocationSession.HasLocation)
+                    {
+                        <a class="nav-item @(IsActive("/portal/reports") ? "active" : "")"
+                           href="/portal/reports" @onclick="() => OnNavigate.InvokeAsync()">
+                            <span class="nav-icon">📋</span>
+                            <span class="nav-label">Reports</span>
+                        </a>
+                    }
+                    else
+                    {
+                        <span class="nav-item nav-item-disabled" title="Select a location on the Dashboard first">
+                            <span class="nav-icon">📋</span>
+                            <span class="nav-label">Reports</span>
+                        </span>
+                    }
+                </div>
             }
 
             @if (context.User.IsInRole("Administrator"))
@@ -198,6 +226,7 @@
 
     private record NavItem(string Label, string Url, string Icon);
     private List<NavItem> _navItems = [];
+    private bool   _dashboardOpen    = true;
     private bool   _setupOpen;
     private bool   _generalOpen;
     private bool   _financeOpen;
@@ -257,6 +286,7 @@
     private static readonly (string Label, string Url)[] _payablesItems =
     [
         ("Vendors",     "/portal/admin/vendors"),
+        ("Due Dates",   "/portal/admin/payable-terms"),
         ("Check Setup", "/portal/admin/check-setup"),
     ];
 
@@ -302,6 +332,8 @@
     }
 
     private void OnLocationChanged() => InvokeAsync(StateHasChanged);
+
+    private void ToggleDashboard() => _dashboardOpen = !_dashboardOpen;
 
     private void ToggleSetup()
     {

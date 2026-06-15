@@ -227,14 +227,15 @@ public sealed class EodSalesService
 
         // Group rows by section (preserving layout display order)
         var sections = layout.Rows
-            .GroupBy(row => (row.SectionID, row.SectionName, row.Multiplier))
+            .GroupBy(row => (row.SectionID, row.SectionName, row.Multiplier, row.UseInEodSales))
             .OrderBy(g => layout.Rows.FindIndex(r => r.SectionID == g.Key.SectionID))
             .Select(g => new EodSalesGridSection
             {
-                SectionID   = g.Key.SectionID,
-                SectionName = g.Key.SectionName,
-                Multiplier  = g.Key.Multiplier,
-                Rows        = [.. g],
+                SectionID     = g.Key.SectionID,
+                SectionName   = g.Key.SectionName,
+                Multiplier    = g.Key.Multiplier,
+                UseInEodSales = g.Key.UseInEodSales,
+                Rows          = [.. g],
             })
             .ToList();
 

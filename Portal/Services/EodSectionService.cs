@@ -11,7 +11,7 @@ public sealed class EodSectionService
 
     public async Task<List<EodSection>> GetAllAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT [SectionID],[Name],[Description],[Multiplier],[CreatedAt] FROM [dbo].[EodSections] ORDER BY [Name];";
+        const string sql = "SELECT [SectionID],[Name],[Description],[Multiplier],[UseInEodSales],[UseInEodGraph],[CreatedAt] FROM [dbo].[EodSections] ORDER BY [Name];";
         var list = new List<EodSection>();
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
@@ -25,29 +25,33 @@ public sealed class EodSectionService
     public async Task<int> CreateAsync(EodSection item, CancellationToken ct = default)
     {
         const string sql = """
-            INSERT INTO [dbo].[EodSections]([Name],[Description],[Multiplier])
+            INSERT INTO [dbo].[EodSections]([Name],[Description],[Multiplier],[UseInEodSales],[UseInEodGraph])
             OUTPUT INSERTED.[SectionID]
-            VALUES(@Name,@Desc,@Mult);
+            VALUES(@Name,@Desc,@Mult,@UseInEodSales,@UseInEodGraph);
             """;
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Mult", item.Multiplier);
+        cmd.Parameters.AddWithValue("@Name",         item.Name.Trim());
+        cmd.Parameters.AddWithValue("@Desc",         (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Mult",         item.Multiplier);
+        cmd.Parameters.AddWithValue("@UseInEodSales",item.UseInEodSales ? 1 : 0);
+        cmd.Parameters.AddWithValue("@UseInEodGraph", item.UseInEodGraph ? 1 : 0);
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
     public async Task UpdateAsync(EodSection item, CancellationToken ct = default)
     {
-        const string sql = "UPDATE [dbo].[EodSections] SET [Name]=@Name,[Description]=@Desc,[Multiplier]=@Mult WHERE [SectionID]=@ID;";
+        const string sql = "UPDATE [dbo].[EodSections] SET [Name]=@Name,[Description]=@Desc,[Multiplier]=@Mult,[UseInEodSales]=@UseInEodSales,[UseInEodGraph]=@UseInEodGraph WHERE [SectionID]=@ID;";
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@ID",   item.SectionID);
-        cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Mult", item.Multiplier);
+        cmd.Parameters.AddWithValue("@ID",           item.SectionID);
+        cmd.Parameters.AddWithValue("@Name",         item.Name.Trim());
+        cmd.Parameters.AddWithValue("@Desc",         (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Mult",         item.Multiplier);
+        cmd.Parameters.AddWithValue("@UseInEodSales",item.UseInEodSales ? 1 : 0);
+        cmd.Parameters.AddWithValue("@UseInEodGraph", item.UseInEodGraph ? 1 : 0);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -72,6 +76,23 @@ public sealed class EodSectionService
             : await ImportTextAsync(ms, delimiter, ct);
     }
 
+    // Columns that MUST be present for this file to be accepted as an EOD Sections import.
+    private static readonly string[] RequiredColumns = ["Name", "Multiplier"];
+
+    private static ImportResult? ValidateHeaders(IReadOnlySet<string> found)
+    {
+        var missing = RequiredColumns
+            .Where(c => !found.Contains(c))
+            .ToList();
+        if (missing.Count == 0) return null;
+        var result = new ImportResult();
+        result.Errors.Add(
+            $"Wrong file — this does not look like an EOD Sections file. " +
+            $"Missing required column(s): {string.Join(", ", missing)}. " +
+            $"Expected columns include: {string.Join(", ", RequiredColumns)}.");
+        return result;
+    }
+
     private async Task<ImportResult> ImportExcelAsync(Stream stream, CancellationToken ct)
     {
         var result = new ImportResult();
@@ -84,12 +105,15 @@ public sealed class EodSectionService
             var h = ws.Cell(1, c).GetString().Trim();
             if (!string.IsNullOrEmpty(h)) headers[h] = c;
         }
+        if (ValidateHeaders(headers.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)) is { } bad) return bad;
         int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
         for (int row = 2; row <= lastRow; row++)
         {
             string Get(string key) => headers.TryGetValue(key, out var col) ? ws.Cell(row, col).GetString().Trim() : string.Empty;
-            int mult = int.TryParse(Get("Multiplier"), out var m) && m is -1 or 0 or 1 ? m : 1;
-            try   { await UpsertRowAsync(Get("Name"), Get("Description"), mult, result, ct); }
+            int  mult          = int.TryParse(Get("Multiplier"), out var m) && m is -1 or 0 or 1 ? m : 1;
+            bool useInEodSales = ParseBoolFlag(Get("Used in EOD Sales"), defaultValue: true);
+            bool useInEodGraph = ParseBoolFlag(Get("Used in EOD Graph"), defaultValue: false);
+            try   { await UpsertRowAsync(Get("Name"), Get("Description"), mult, useInEodSales, useInEodGraph, result, ct); }
             catch (Exception ex) { result.Errors.Add($"Row {row}: {ex.Message}"); result.RowsSkipped++; }
         }
         return result;
@@ -105,6 +129,7 @@ public sealed class EodSectionService
             .Select((h, i) => (h.Trim(), i))
             .Where(x => !string.IsNullOrEmpty(x.Item1))
             .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
+        if (ValidateHeaders(headers.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)) is { } bad) return bad;
         int lineNum = 1;
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)
@@ -113,14 +138,16 @@ public sealed class EodSectionService
             if (string.IsNullOrWhiteSpace(line)) continue;
             var cols = ParseLine(line, delimiter);
             string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
-            int mult = int.TryParse(Get("Multiplier"), out var m) && m is -1 or 0 or 1 ? m : 1;
-            try   { await UpsertRowAsync(Get("Name"), Get("Description"), mult, result, ct); }
+            int  mult          = int.TryParse(Get("Multiplier"), out var m) && m is -1 or 0 or 1 ? m : 1;
+            bool useInEodSales = ParseBoolFlag(Get("Used in EOD Sales"), defaultValue: true);
+            bool useInEodGraph = ParseBoolFlag(Get("Used in EOD Graph"), defaultValue: false);
+            try   { await UpsertRowAsync(Get("Name"), Get("Description"), mult, useInEodSales, useInEodGraph, result, ct); }
             catch (Exception ex) { result.Errors.Add($"Line {lineNum}: {ex.Message}"); result.RowsSkipped++; }
         }
         return result;
     }
 
-    private async Task UpsertRowAsync(string name, string description, int multiplier, ImportResult result, CancellationToken ct)
+    private async Task UpsertRowAsync(string name, string description, int multiplier, bool useInEodSales, bool useInEodGraph, ImportResult result, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(name)) { result.RowsSkipped++; return; }
         await using var conn = new SqlConnection(_cs);
@@ -131,23 +158,38 @@ public sealed class EodSectionService
         if (existing is int id)
         {
             await using var upd = new SqlCommand(
-                "UPDATE [dbo].[EodSections] SET [Description]=@Desc,[Multiplier]=@Mult WHERE [SectionID]=@ID;", conn);
-            upd.Parameters.AddWithValue("@ID",   id);
-            upd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(description) ?? DBNull.Value);
-            upd.Parameters.AddWithValue("@Mult", multiplier);
+                "UPDATE [dbo].[EodSections] SET [Description]=@Desc,[Multiplier]=@Mult,[UseInEodSales]=@UseInEodSales,[UseInEodGraph]=@UseInEodGraph WHERE [SectionID]=@ID;", conn);
+            upd.Parameters.AddWithValue("@ID",            id);
+            upd.Parameters.AddWithValue("@Desc",          (object?)NullIfEmpty(description) ?? DBNull.Value);
+            upd.Parameters.AddWithValue("@Mult",          multiplier);
+            upd.Parameters.AddWithValue("@UseInEodSales", useInEodSales ? 1 : 0);
+            upd.Parameters.AddWithValue("@UseInEodGraph", useInEodGraph ? 1 : 0);
             await upd.ExecuteNonQueryAsync(ct);
             result.AccountsUpdated++;
         }
         else
         {
             await using var ins = new SqlCommand(
-                "INSERT INTO [dbo].[EodSections]([Name],[Description],[Multiplier]) VALUES(@Name,@Desc,@Mult);", conn);
-            ins.Parameters.AddWithValue("@Name", name.Trim());
-            ins.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(description) ?? DBNull.Value);
-            ins.Parameters.AddWithValue("@Mult", multiplier);
+                "INSERT INTO [dbo].[EodSections]([Name],[Description],[Multiplier],[UseInEodSales],[UseInEodGraph]) VALUES(@Name,@Desc,@Mult,@UseInEodSales,@UseInEodGraph);", conn);
+            ins.Parameters.AddWithValue("@Name",          name.Trim());
+            ins.Parameters.AddWithValue("@Desc",          (object?)NullIfEmpty(description) ?? DBNull.Value);
+            ins.Parameters.AddWithValue("@Mult",          multiplier);
+            ins.Parameters.AddWithValue("@UseInEodSales", useInEodSales ? 1 : 0);
+            ins.Parameters.AddWithValue("@UseInEodGraph", useInEodGraph ? 1 : 0);
             await ins.ExecuteNonQueryAsync(ct);
             result.AccountsCreated++;
         }
+    }
+
+    /// <summary>Accepts 0/false/no → false; 1/true/yes → true; empty → defaultValue.</summary>
+    private static bool ParseBoolFlag(string value, bool defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return defaultValue;
+        if (value == "0" || value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no",    StringComparison.OrdinalIgnoreCase)) return false;
+        if (value == "1" || value.Equals("true",  StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes",   StringComparison.OrdinalIgnoreCase)) return true;
+        return defaultValue;
     }
 
     private static string[] ParseLine(string line, char delimiter)
@@ -170,10 +212,12 @@ public sealed class EodSectionService
 
     private static EodSection Map(SqlDataReader r) => new()
     {
-        SectionID   = r.GetInt32(0),
-        Name        = r.GetString(1),
-        Description = r.IsDBNull(2) ? string.Empty : r.GetString(2),
-        Multiplier  = r.GetInt32(3),
-        CreatedAt   = r.GetDateTime(4),
+        SectionID    = r.GetInt32(0),
+        Name         = r.GetString(1),
+        Description  = r.IsDBNull(2) ? string.Empty : r.GetString(2),
+        Multiplier   = r.GetInt32(3),
+        UseInEodSales= r.GetBoolean(4),
+        UseInEodGraph= r.GetBoolean(5),
+        CreatedAt    = r.GetDateTime(6),
     };
 }

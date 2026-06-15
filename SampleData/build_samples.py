@@ -114,9 +114,85 @@ coa_rows = [
     ("01-000-8100","Interest Expense","Other Income and Expense","Income Statement"),
     ("01-000-8200","Gain Loss on Disposal of Assets","Other Income and Expense","Income Statement"),
     ("01-000-8900","Miscellaneous Income","Other Income and Expense","Income Statement"),
+    # Unit Accounts — statistical / non-financial counts.
+    # Format: Dept-Location-9xxx  (location segment is location-dependent; 001 = placeholder)
+    # Departments: FPOS = Front POS / dining room, BAR = Bar & Lounge, KITCH = Kitchen
+    ("FPOS-001-9000","Count of Customers - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9001","Count of Checks - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9002","Count of Tables Turned - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9003","Count of Takeout Orders - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9004","Count of Delivery Orders - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9006","Labor Hours - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9007","Count of Voids - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9008","Count of Comps - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9009","Count of Reservations - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9010","Count of No Shows - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9011","Count of Walk Ins - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9012","Count of Catering Events - FPOS","Unit Accounts","Statistical"),
+    ("FPOS-001-9013","Count of Private Dining Events - FPOS","Unit Accounts","Statistical"),
+    ("BAR-001-9000", "Count of Customers - Bar","Unit Accounts","Statistical"),
+    ("BAR-001-9001", "Count of Checks - Bar","Unit Accounts","Statistical"),
+    ("BAR-001-9005", "Count of Bar Covers - Bar","Unit Accounts","Statistical"),
+    ("BAR-001-9006", "Labor Hours - Bar","Unit Accounts","Statistical"),
+    ("BAR-001-9007", "Count of Voids - Bar","Unit Accounts","Statistical"),
+    ("BAR-001-9008", "Count of Comps - Bar","Unit Accounts","Statistical"),
+    ("KITCH-001-9006","Labor Hours - Kitchen","Unit Accounts","Statistical"),
+
+    # ── Location 001 — BAR department revenue accounts ─────────────────────────
+    ("BAR-001-4000", "Food Sales - Bar",          "Revenue", "Income Statement"),
+    ("BAR-001-4010", "Appetizers - Bar",          "Revenue", "Income Statement"),
+    ("BAR-001-4020", "Beer Sales - Bar",          "Revenue", "Income Statement"),
+    ("BAR-001-4030", "Beverage Sales - Bar",      "Revenue", "Income Statement"),
+
+    # ── Location 001 — FPOS department revenue accounts ────────────────────────
+    ("FPOS-001-4000","Food Sales - FPOS",         "Revenue", "Income Statement"),
+    ("FPOS-001-4010","Appetizers - FPOS",         "Revenue", "Income Statement"),
+    ("FPOS-001-4020","Beverage Sales - FPOS",     "Revenue", "Income Statement"),
+
+    # ── Location 001 — Building and Insurance liabilities ──────────────────────
+    ("01-001-2300",  "Building Liability",          "Liabilities", "Balance Sheet"),
+    ("01-001-2310",  "Insurance Liability",         "Liabilities", "Balance Sheet"),
+
+    # ── Location 001 — BAR department liability accounts ───────────────────────
+    ("BAR-001-2300", "Building Liability - Bar",    "Liabilities", "Balance Sheet"),
+    ("BAR-001-2310", "Insurance Liability - Bar",   "Liabilities", "Balance Sheet"),
+
+    # ── Location 001 — FPOS department liability accounts ──────────────────────
+    ("FPOS-001-2300","Building Liability - FPOS",   "Liabilities", "Balance Sheet"),
+    ("FPOS-001-2310","Insurance Liability - FPOS",  "Liabilities", "Balance Sheet"),
+
+    # ── Location 001 — BAR department disposition accounts (Income Statement) ───
+    ("BAR-001-5040", "Comps - Bar",                "Dispositions", "Income Statement"),
+    ("BAR-001-5050", "Voids - Bar",                "Dispositions", "Income Statement"),
+    ("BAR-001-5060", "Discounts - Bar",            "Dispositions", "Income Statement"),
+    ("BAR-001-5070", "Employee Meals - Bar",       "Dispositions", "Income Statement"),
+    ("BAR-001-5080", "Waste - Bar",                "Dispositions", "Income Statement"),
+
+    # ── Location 001 — FPOS department disposition accounts (Income Statement) ─
+    ("FPOS-001-5040","Comps - FPOS",               "Dispositions", "Income Statement"),
+    ("FPOS-001-5050","Voids - FPOS",               "Dispositions", "Income Statement"),
+    ("FPOS-001-5060","Discounts - FPOS",           "Dispositions", "Income Statement"),
+    ("FPOS-001-5070","Employee Meals - FPOS",      "Dispositions", "Income Statement"),
+    ("FPOS-001-5080","Waste - FPOS",               "Dispositions", "Income Statement"),
+
+    # ── Location 001 — BAR department tender/settlement accounts (Balance Sheet)
+    ("BAR-001-1500", "Cash - Bar",                 "Dispositions", "Balance Sheet"),
+    ("BAR-001-1501", "Visa - Bar",                 "Dispositions", "Balance Sheet"),
+    ("BAR-001-1502", "MasterCard - Bar",           "Dispositions", "Balance Sheet"),
+    ("BAR-001-1503", "Discover - Bar",             "Dispositions", "Balance Sheet"),
+    ("BAR-001-1504", "Amex - Bar",                 "Dispositions", "Balance Sheet"),
+    ("BAR-001-1505", "Checks - Bar",               "Dispositions", "Balance Sheet"),
+
+    # ── Location 001 — FPOS department tender/settlement accounts (Balance Sheet)
+    ("FPOS-001-1500","Cash - FPOS",                "Dispositions", "Balance Sheet"),
+    ("FPOS-001-1501","Visa - FPOS",                "Dispositions", "Balance Sheet"),
+    ("FPOS-001-1502","MasterCard - FPOS",          "Dispositions", "Balance Sheet"),
+    ("FPOS-001-1503","Discover - FPOS",            "Dispositions", "Balance Sheet"),
+    ("FPOS-001-1504","Amex - FPOS",                "Dispositions", "Balance Sheet"),
+    ("FPOS-001-1505","Checks - FPOS",              "Dispositions", "Balance Sheet"),
 ]
 
-coa_hdrs = ["Account Name","Account Description","Account Category","Account Type"]
+coa_hdrs = ["Account","Account Name","Account Category","Account Type"]
 wb = Workbook(); ws = wb.active; ws.title = "Chart of Accounts"
 ws.row_dimensions[1].height = 20
 for c, h in enumerate(coa_hdrs, 1): hdr(ws.cell(1, c), h)

@@ -20,14 +20,18 @@ rows = [
     ("Gift Card Sales",          "Sales", "Gift card purchases for the period"),
     ("Merchandise Sales",        "Sales", "Branded merchandise and retail sales"),
 
-    # ── Income (-1) — payment tenders ──────────────────────────────────────
-    ("Cash",                     "Income", "Cash payments received"),
-    ("Amex",                     "Income", "American Express credit card payments"),
-    ("Discover",                 "Income", "Discover credit card payments"),
-    ("Visa",                     "Income", "Visa credit card payments"),
-    ("Mastercard",               "Income", "Mastercard credit card payments"),
-    ("Gift Card Redemption",     "Income", "Gift card redemptions applied as payment"),
-    ("House Account",            "Income", "Payments charged to internal house accounts"),
+    # ── Dispositions (-1) — tender types & reductions ─────────────────────
+    ("Cash",                       "Dispositions", "Cash payments collected for the period"),
+    ("Visa",                       "Dispositions", "Visa credit and debit card payments collected"),
+    ("MasterCard",                 "Dispositions", "MasterCard credit and debit card payments collected"),
+    ("Discover",                   "Dispositions", "Discover card payments collected"),
+    ("Amex",                       "Dispositions", "American Express card payments collected"),
+    ("Checks",                     "Dispositions", "Personal and business check payments collected"),
+    ("Comps",                      "Dispositions", "Complimentary items and checks written off"),
+    ("Voids",                      "Dispositions", "Voided transactions removed from revenue"),
+    ("Discounts",                  "Dispositions", "Promotional and loyalty discounts applied"),
+    ("Employee Meals",             "Dispositions", "Employee meal credits and staff dining deductions"),
+    ("Waste",                      "Dispositions", "Food and beverage waste written off"),
 
     # ── Liabilities (0) — expenses & obligations ───────────────────────────
     ("Sales Tax",                "Liabilities", "Sales tax collected and due to state/local authority"),
@@ -40,6 +44,24 @@ rows = [
     ("Repairs & Maintenance",    "Liabilities", "Facility and equipment repair expense"),
     ("Supplies",                 "Liabilities", "Operating supply and consumable expense"),
     ("Credit Card Fees",         "Liabilities", "Merchant processing and transaction fees"),
+
+    # ── Unit Accounts (0/excluded) — statistical counts ────────────────────
+    ("Count of Customers",       "Unit Accounts", "Total covers / guests served for the period"),
+    ("Count of Checks",          "Unit Accounts", "Total number of guest checks or tickets"),
+    ("Count of Tables Turned",   "Unit Accounts", "Total table turns for the period"),
+    ("Count of Takeout Orders",  "Unit Accounts", "Total to-go and curbside orders"),
+    ("Count of Delivery Orders", "Unit Accounts", "Total third-party and in-house delivery orders"),
+    ("Count of Bar Covers",      "Unit Accounts", "Total bar-seating covers for the period"),
+    ("Labor Hours Kitchen",      "Unit Accounts", "Total kitchen labor hours clocked for the period"),
+    ("Labor Hours Front of House","Unit Accounts","Total FOH labor hours clocked for the period"),
+    ("Labor Hours Bar",          "Unit Accounts", "Total bar labor hours clocked for the period"),
+    ("Count of Voids",           "Unit Accounts", "Total number of voided items or checks"),
+    ("Count of Comps",           "Unit Accounts", "Total number of complimentary items or checks"),
+    ("Count of Reservations",    "Unit Accounts", "Total reservations booked for the period"),
+    ("Count of No Shows",        "Unit Accounts", "Total reservation no-shows for the period"),
+    ("Count of Walk Ins",        "Unit Accounts", "Total walk-in parties seated"),
+    ("Count of Catering Events", "Unit Accounts", "Total catering events executed for the period"),
+    ("Count of Private Dining Events","Unit Accounts","Total private dining buyout events"),
 ]
 
 wb = openpyxl.Workbook()
@@ -58,14 +80,18 @@ thin         = Border(
 
 # Section colour bands
 section_fills = {
-    "Sales":       PatternFill("solid", fgColor="EAF4EA"),
-    "Income":      PatternFill("solid", fgColor="EAF0FA"),
-    "Liabilities": PatternFill("solid", fgColor="FAF4EA"),
+    "Sales":         PatternFill("solid", fgColor="EAF4EA"),
+    "Income":        PatternFill("solid", fgColor="EAF0FA"),
+    "Dispositions":  PatternFill("solid", fgColor="FFF0EA"),
+    "Liabilities":   PatternFill("solid", fgColor="FAF4EA"),
+    "Unit Accounts": PatternFill("solid", fgColor="F4EAF4"),
 }
 section_fonts = {
-    "Sales":       Font(name="Arial", size=10, color="1A5C1A"),
-    "Income":      Font(name="Arial", size=10, color="1A3A6B"),
-    "Liabilities": Font(name="Arial", size=10, color="6B4A1A"),
+    "Sales":         Font(name="Arial", size=10, color="1A5C1A"),
+    "Income":        Font(name="Arial", size=10, color="1A3A6B"),
+    "Dispositions":  Font(name="Arial", size=10, color="7A3010"),
+    "Liabilities":   Font(name="Arial", size=10, color="6B4A1A"),
+    "Unit Accounts": Font(name="Arial", size=10, color="5C1A5C"),
 }
 
 headers    = ["Name", "Section", "Description"]
@@ -90,6 +116,7 @@ ws.freeze_panes = "A2"
 out = r"C:\ClaudeOutput\Culinaire\SampleData\EOD Rows.xlsx"
 wb.save(out)
 print(f"Saved: {out}  ({len(rows)} rows)")
-print(f"  Sales:       {sum(1 for _,s,_ in rows if s=='Sales')}")
-print(f"  Income:      {sum(1 for _,s,_ in rows if s=='Income')}")
-print(f"  Liabilities: {sum(1 for _,s,_ in rows if s=='Liabilities')}")
+print(f"  Sales:         {sum(1 for _,s,_ in rows if s=='Sales')}")
+print(f"  Dispositions:  {sum(1 for _,s,_ in rows if s=='Dispositions')}")
+print(f"  Liabilities:   {sum(1 for _,s,_ in rows if s=='Liabilities')}")
+print(f"  Unit Accounts: {sum(1 for _,s,_ in rows if s=='Unit Accounts')}")

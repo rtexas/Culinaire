@@ -158,7 +158,7 @@
 
                         <tr class="eod-column-totals-row">
                             <td class="eod-row-label eod-col-total-label"
-                                style="background:var(--color-footer-bg);color:var(--color-footer-txt);">Grand Total</td>
+                                style="background:var(--color-footer-bg);color:var(--color-footer-txt);">EOD Sales Total</td>
                             @foreach (var col in _grid.Layout.Columns)
                             {
                                 <td class="eod-col-total-cell"
@@ -373,14 +373,17 @@
     private decimal ColumnTotal(int columnID)
     {
         if (_grid is null) return 0m;
-        return _grid.Sections.Sum(sec => sec.Rows.Sum(r => _values.GetValueOrDefault((r.RowID, columnID), 0m) * sec.Multiplier));
+        return _grid.Sections
+            .Where(sec => sec.UseInEodSales)
+            .Sum(sec => sec.Rows.Sum(r => _values.GetValueOrDefault((r.RowID, columnID), 0m) * sec.Multiplier));
     }
 
     private decimal GrandTotal()
     {
         if (_grid is null) return 0m;
-        return _grid.Sections.Sum(sec =>
-            sec.Rows.Sum(r => _grid.Layout.Columns.Sum(c => _values.GetValueOrDefault((r.RowID, c.ColumnID), 0m)) * sec.Multiplier));
+        return _grid.Sections
+            .Where(sec => sec.UseInEodSales)
+            .Sum(sec => sec.Rows.Sum(r => _grid.Layout.Columns.Sum(c => _values.GetValueOrDefault((r.RowID, c.ColumnID), 0m)) * sec.Multiplier));
     }
 
     // ── Save ───────────────────────────────────────────────────────────────────

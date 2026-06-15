@@ -2,6 +2,7 @@
 @page "/portal/payables/{PayableId:int}"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject PayableService         PayableService
+@inject PayableTermService     TermService
 @inject VendorService          VendorService
 @inject ItemService            ItemService
 @inject ShippingMethodService  ShipService
@@ -103,8 +104,27 @@
                 <input type="date" @bind="_invoiceDate" />
             </div>
             <div class="form-row">
-                <label>Due Date</label>
-                <input type="date" @bind="_dueDate" />
+                <label>Due Date Term</label>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <select value="@(_dueDateTermId?.ToString() ?? string.Empty)"
+                            @onchange="OnDueDateTermChanged" style="min-width:180px;">
+                        <option value="">— None —</option>
+                        @foreach (var t in _dueDateTerms)
+                        {
+                            <option value="@t.PayableTermID">@t.Name</option>
+                        }
+                    </select>
+                    @if (_calculatedDueDate.HasValue)
+                    {
+                        <span style="font-size:13px;color:var(--color-primary);font-weight:600;white-space:nowrap;">
+                            Due: @_calculatedDueDate.Value.ToString("MMM d, yyyy")
+                        </span>
+                    }
+                    else if (_dueDateTermId.HasValue)
+                    {
+                        <span style="font-size:12px;color:var(--color-text-muted);">No date calculated</span>
+                    }
+                </div>
             </div>
         </div>
 
@@ -241,7 +261,8 @@
     private int      _vendorId;
     private string   _invoiceNumber  = string.Empty;
     private DateTime _invoiceDate    = DateTime.Today;
-    private DateTime? _dueDate;
+    private int?     _dueDateTermId;
+    private DateTime? _calculatedDueDate;
     private string?  _shippingMethodId;
     private decimal  _shippingCharge;
     private decimal  _taxAmount;
@@ -255,6 +276,7 @@
     private List<Portal.Models.Vendor>         _vendors        = [];
     private List<Portal.Models.Item>           _items          = [];
     private List<Portal.Models.ShippingMethod> _shipMethods    = [];
+    private List<Portal.Models.PayableTerm>    _dueDateTerms   = [];
     private List<LineEdit>                     _lines          = [];
     private Portal.Models.Vendor?              _selectedVendor;
 
@@ -266,10 +288,12 @@
         var vendorTask = VendorService.GetAllAsync();
         var itemTask   = ItemService.GetAllAsync();
         var shipTask   = ShipService.GetAllAsync();
-        await Task.WhenAll(vendorTask, itemTask, shipTask);
-        _vendors     = vendorTask.Result;
-        _items       = itemTask.Result;
-        _shipMethods = shipTask.Result;
+        var termTask   = TermService.GetAllAsync();
+        await Task.WhenAll(vendorTask, itemTask, shipTask, termTask);
+        _vendors      = vendorTask.Result;
+        _items        = itemTask.Result;
+        _shipMethods  = shipTask.Result;
+        _dueDateTerms = termTask.Result;
 
         _payableId = PayableId;
         if (_payableId > 0)
@@ -280,7 +304,7 @@
                 _vendorId         = header.VendorID;
                 _invoiceNumber    = header.InvoiceNumber;
                 _invoiceDate      = header.InvoiceDate;
-                _dueDate          = header.DueDate;
+                _dueDateTermId    = header.DueDateTermID;
                 _shippingMethodId = header.ShippingMethodID?.ToString();
                 _shippingCharge   = header.ShippingCharge;
                 _taxAmount        = header.TaxAmount;
@@ -303,6 +327,8 @@
         // Populate address block when editing an existing invoice
         if (_vendorId > 0)
             _selectedVendor = _vendors.FirstOrDefault(v => v.VendorID == _vendorId);
+
+        RecalculateDueDate();
     }
 
     private void OnVendorChanged(ChangeEventArgs e)
@@ -367,7 +393,8 @@
                 VendorID         = _vendorId,
                 InvoiceNumber    = _invoiceNumber,
                 InvoiceDate      = _invoiceDate,
-                DueDate          = _dueDate,
+                DueDateTermID    = _dueDateTermId,
+                DueDate          = _calculatedDueDate,
                 ShippingMethodID = shipId,
                 ShippingCharge   = _shippingCharge,
                 TaxAmount        = _taxAmount,
@@ -408,6 +435,26 @@
             _isError = true;
         }
         finally { _saving = false; }
+    }
+
+    private void OnDueDateTermChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id) && id > 0)
+            _dueDateTermId = id;
+        else
+            _dueDateTermId = null;
+        RecalculateDueDate();
+    }
+
+    private void RecalculateDueDate()
+    {
+        if (_dueDateTermId is null)
+        {
+            _calculatedDueDate = null;
+            return;
+        }
+        var term = _dueDateTerms.FirstOrDefault(t => t.PayableTermID == _dueDateTermId);
+        _calculatedDueDate = term?.ComputeDueDate(_invoiceDate, DateTime.Today);
     }
 
     // ── In-memory line edit model ─────────────────────────────────────────────
