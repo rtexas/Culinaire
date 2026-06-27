@@ -94,52 +94,10 @@ public sealed class VendorService
 
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         IAsyncEnumerable<Dictionary<string,string>> rows = ext is ".xlsx" or ".xls"
-            ? ExcelRows(ms)
-            : TextRows(ms, delimiter);
+            ? ImportHelper.ExcelRowsAsync(ms)
+            : ImportHelper.TextRowsAsync(ms, delimiter);
 
         return await ProcessRowsAsync(rows, states, countries, accounts, ct);
-    }
-
-    private static async IAsyncEnumerable<Dictionary<string,string>> ExcelRows(Stream stream)
-    {
-        using var wb    = new XLWorkbook(stream);
-        var ws          = wb.Worksheets.First();
-        var headers     = BuildHeaderMap(ws);
-        int lastRow     = ws.LastRowUsed()?.RowNumber() ?? 1;
-
-        for (int row = 2; row <= lastRow; row++)
-        {
-            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, col) in headers)
-                d[key] = ws.Cell(row, col).GetString().Trim();
-            yield return d;
-            await Task.CompletedTask;
-        }
-    }
-
-    private static async IAsyncEnumerable<Dictionary<string,string>> TextRows(
-        Stream stream, char delimiter,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    {
-        using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
-        var headerLine   = await reader.ReadLineAsync(ct);
-        if (headerLine is null) yield break;
-
-        var headers = ParseLine(headerLine, delimiter)
-            .Select((h, i) => (h.Trim(), i))
-            .Where(x => !string.IsNullOrEmpty(x.Item1))
-            .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
-
-        string? line;
-        while ((line = await reader.ReadLineAsync(ct)) is not null)
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            var cols = ParseLine(line, delimiter);
-            var d    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, idx) in headers)
-                d[key] = idx < cols.Length ? cols[idx].Trim() : string.Empty;
-            yield return d;
-        }
     }
 
     private async Task<ImportResult> ProcessRowsAsync(
@@ -283,46 +241,16 @@ public sealed class VendorService
     {
         cmd.Parameters.AddWithValue("@Code",    v.VendorCode.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Name",    v.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc",    (object?)Null(v.Description) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Addr1",   (object?)Null(v.Address1)    ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Addr2",   (object?)Null(v.Address2)    ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Addr3",   (object?)Null(v.Address3)    ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@City",    (object?)Null(v.City)        ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc",    (object?)ImportHelper.NullIfEmpty(v.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr1",   (object?)ImportHelper.NullIfEmpty(v.Address1)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr2",   (object?)ImportHelper.NullIfEmpty(v.Address2)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr3",   (object?)ImportHelper.NullIfEmpty(v.Address3)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@City",    (object?)ImportHelper.NullIfEmpty(v.City)        ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@StateID", (object?)v.StateRegionID     ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Zip",     (object?)Null(v.PostalCode)  ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Zip",     (object?)ImportHelper.NullIfEmpty(v.PostalCode)  ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@CtyID",   (object?)v.CountryID         ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@AcctID",  (object?)v.DefaultPayablesAccountID ?? DBNull.Value);
     }
-
-    private static Dictionary<string,int> BuildHeaderMap(IXLWorksheet ws)
-    {
-        var map = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
-        int lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
-        for (int c = 1; c <= lastCol; c++)
-        {
-            var h = ws.Cell(1, c).GetString().Trim();
-            if (!string.IsNullOrEmpty(h)) map[h] = c;
-        }
-        return map;
-    }
-
-    private static string[] ParseLine(string line, char delimiter)
-    {
-        var fields = new List<string>();
-        var sb = new System.Text.StringBuilder();
-        bool inQ = false;
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"') { if (inQ && i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; } else inQ = !inQ; }
-            else if (c == delimiter && !inQ) { fields.Add(sb.ToString()); sb.Clear(); }
-            else sb.Append(c);
-        }
-        fields.Add(sb.ToString());
-        return [.. fields];
-    }
-
-    private static string? Null(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     private static Vendor Map(SqlDataReader r) => new()
     {

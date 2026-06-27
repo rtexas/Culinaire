@@ -32,7 +32,7 @@ public sealed class CountryService
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
         cmd.Parameters.AddWithValue("@Code", item.Code.Trim().ToUpperInvariant());
-        cmd.Parameters.AddWithValue("@Desc", (object?)Null(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc", (object?)ImportHelper.NullIfEmpty(item.Description) ?? DBNull.Value);
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
@@ -45,7 +45,7 @@ public sealed class CountryService
         cmd.Parameters.AddWithValue("@ID",   item.CountryID);
         cmd.Parameters.AddWithValue("@Name", item.Name.Trim());
         cmd.Parameters.AddWithValue("@Code", item.Code.Trim().ToUpperInvariant());
-        cmd.Parameters.AddWithValue("@Desc", (object?)Null(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc", (object?)ImportHelper.NullIfEmpty(item.Description) ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -78,7 +78,7 @@ public sealed class CountryService
         var result = new ImportResult();
         using var wb = new XLWorkbook(stream);
         var ws      = wb.Worksheets.First();
-        var headers = BuildHeaderMap(ws);
+        var headers = ImportHelper.BuildHeaderMap(ws);
         int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
         for (int row = 2; row <= lastRow; row++)
@@ -108,7 +108,7 @@ public sealed class CountryService
         {
             lineNum++;
             if (string.IsNullOrWhiteSpace(line)) continue;
-            var cols = ParseLine(line, delimiter);
+            var cols = ImportHelper.ParseLine(line, delimiter);
             string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
             try   { await UpsertAsync(Get("Name"), Get("Code"), Get("Description"), result, ct); }
             catch (Exception ex) { result.Errors.Add($"Line {lineNum}: {ex.Message}"); result.RowsSkipped++; }
@@ -132,7 +132,7 @@ public sealed class CountryService
             await using var upd = new SqlCommand("UPDATE [dbo].[Countries] SET [Name]=@Name,[Description]=@Desc WHERE [CountryID]=@ID;", conn);
             upd.Parameters.AddWithValue("@ID",   id);
             upd.Parameters.AddWithValue("@Name", name);
-            upd.Parameters.AddWithValue("@Desc", (object?)Null(description) ?? DBNull.Value);
+            upd.Parameters.AddWithValue("@Desc", (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
             await upd.ExecuteNonQueryAsync(ct);
             result.AccountsUpdated++;
         }
@@ -141,43 +141,11 @@ public sealed class CountryService
             await using var ins = new SqlCommand("INSERT INTO [dbo].[Countries]([Name],[Code],[Description]) VALUES(@Name,@Code,@Desc);", conn);
             ins.Parameters.AddWithValue("@Name", name);
             ins.Parameters.AddWithValue("@Code", code);
-            ins.Parameters.AddWithValue("@Desc", (object?)Null(description) ?? DBNull.Value);
+            ins.Parameters.AddWithValue("@Desc", (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
             await ins.ExecuteNonQueryAsync(ct);
             result.AccountsCreated++;
         }
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static Dictionary<string, int> BuildHeaderMap(IXLWorksheet ws)
-    {
-        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        int lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
-        for (int c = 1; c <= lastCol; c++)
-        {
-            var h = ws.Cell(1, c).GetString().Trim();
-            if (!string.IsNullOrEmpty(h)) map[h] = c;
-        }
-        return map;
-    }
-
-    private static string[] ParseLine(string line, char delimiter)
-    {
-        var fields = new List<string>();
-        var sb = new System.Text.StringBuilder();
-        bool inQ = false;
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"') { if (inQ && i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; } else inQ = !inQ; }
-            else if (c == delimiter && !inQ) { fields.Add(sb.ToString()); sb.Clear(); }
-            else sb.Append(c);
-        }
-        fields.Add(sb.ToString());
-        return [.. fields];
-    }
-
-    private static string? Null(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     private static Country Map(SqlDataReader r) => new()
     {

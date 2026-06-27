@@ -82,13 +82,13 @@ public sealed class LocationService
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Code",  item.Code.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Name",  item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(item.Description) ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Seg",   item.SegmentNumber);
-        cmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(item.Address1) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(item.Address2) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(item.City)     ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(item.State)    ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(item.Zip)      ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr1", (object?)ImportHelper.NullIfEmpty(item.Address1) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr2", (object?)ImportHelper.NullIfEmpty(item.Address2) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@City",  (object?)ImportHelper.NullIfEmpty(item.City)     ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@State", (object?)ImportHelper.NullIfEmpty(item.State)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Zip",   (object?)ImportHelper.NullIfEmpty(item.Zip)      ?? DBNull.Value);
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
@@ -106,13 +106,13 @@ public sealed class LocationService
         cmd.Parameters.AddWithValue("@ID",    item.LocationID);
         cmd.Parameters.AddWithValue("@Code",  item.Code.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Name",  item.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(item.Description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(item.Description) ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Seg",   item.SegmentNumber);
-        cmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(item.Address1) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(item.Address2) ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(item.City)     ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(item.State)    ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(item.Zip)      ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr1", (object?)ImportHelper.NullIfEmpty(item.Address1) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Addr2", (object?)ImportHelper.NullIfEmpty(item.Address2) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@City",  (object?)ImportHelper.NullIfEmpty(item.City)     ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@State", (object?)ImportHelper.NullIfEmpty(item.State)    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Zip",   (object?)ImportHelper.NullIfEmpty(item.Zip)      ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -219,7 +219,7 @@ public sealed class LocationService
         var headerLine = await reader.ReadLineAsync(ct);
         if (headerLine is null) return result;
 
-        var headers = ParseLine(headerLine, delimiter)
+        var headers = ImportHelper.ParseLine(headerLine, delimiter)
             .Select((h, i) => (h.Trim(), i))
             .Where(x => !string.IsNullOrEmpty(x.Item1))
             .ToDictionary(x => x.Item1, x => x.i, StringComparer.OrdinalIgnoreCase);
@@ -230,7 +230,7 @@ public sealed class LocationService
         {
             lineNum++;
             if (string.IsNullOrWhiteSpace(line)) continue;
-            var cols = ParseLine(line, delimiter);
+            var cols = ImportHelper.ParseLine(line, delimiter);
             string Get(string key) => headers.TryGetValue(key, out var idx) && idx < cols.Length ? cols[idx].Trim() : string.Empty;
             int    seg = int.TryParse(Get("Segment Number"), out var s) ? s : 0;
             try
@@ -271,13 +271,13 @@ public sealed class LocationService
             await using var updCmd = new SqlCommand(upd, conn);
             updCmd.Parameters.AddWithValue("@ID",    existingId);
             updCmd.Parameters.AddWithValue("@Name",  name);
-            updCmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
             updCmd.Parameters.AddWithValue("@Seg",   segmentNumber);
-            updCmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(address1) ?? DBNull.Value);
-            updCmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(address2) ?? DBNull.Value);
-            updCmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(city)     ?? DBNull.Value);
-            updCmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(state)    ?? DBNull.Value);
-            updCmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(zip)      ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Addr1", (object?)ImportHelper.NullIfEmpty(address1) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Addr2", (object?)ImportHelper.NullIfEmpty(address2) ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@City",  (object?)ImportHelper.NullIfEmpty(city)     ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@State", (object?)ImportHelper.NullIfEmpty(state)    ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@Zip",   (object?)ImportHelper.NullIfEmpty(zip)      ?? DBNull.Value);
             await updCmd.ExecuteNonQueryAsync(ct);
             result.AccountsUpdated++;
         }
@@ -290,41 +290,17 @@ public sealed class LocationService
             await using var insCmd = new SqlCommand(ins, conn);
             insCmd.Parameters.AddWithValue("@Code",  code);
             insCmd.Parameters.AddWithValue("@Name",  name);
-            insCmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
             insCmd.Parameters.AddWithValue("@Seg",   segmentNumber);
-            insCmd.Parameters.AddWithValue("@Addr1", (object?)NullIfEmpty(address1) ?? DBNull.Value);
-            insCmd.Parameters.AddWithValue("@Addr2", (object?)NullIfEmpty(address2) ?? DBNull.Value);
-            insCmd.Parameters.AddWithValue("@City",  (object?)NullIfEmpty(city)     ?? DBNull.Value);
-            insCmd.Parameters.AddWithValue("@State", (object?)NullIfEmpty(state)    ?? DBNull.Value);
-            insCmd.Parameters.AddWithValue("@Zip",   (object?)NullIfEmpty(zip)      ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Addr1", (object?)ImportHelper.NullIfEmpty(address1) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Addr2", (object?)ImportHelper.NullIfEmpty(address2) ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@City",  (object?)ImportHelper.NullIfEmpty(city)     ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@State", (object?)ImportHelper.NullIfEmpty(state)    ?? DBNull.Value);
+            insCmd.Parameters.AddWithValue("@Zip",   (object?)ImportHelper.NullIfEmpty(zip)      ?? DBNull.Value);
             await insCmd.ExecuteNonQueryAsync(ct);
             result.AccountsCreated++;
         }
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static string[] ParseLine(string line, char delimiter)
-    {
-        var fields = new List<string>();
-        var sb     = new System.Text.StringBuilder();
-        bool inQ   = false;
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"')
-            {
-                if (inQ && i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
-                else inQ = !inQ;
-            }
-            else if (c == delimiter && !inQ) { fields.Add(sb.ToString()); sb.Clear(); }
-            else sb.Append(c);
-        }
-        fields.Add(sb.ToString());
-        return [.. fields];
-    }
-
-    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     private static Location Map(SqlDataReader r) => new()
     {

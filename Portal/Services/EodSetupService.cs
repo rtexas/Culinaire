@@ -75,12 +75,12 @@ public sealed class EodSetupService
         await using (var cmd = new SqlCommand("""
             SELECT sr.[SetupRowID],sr.[RowID],ro.[Name],ISNULL(ro.[Description],''),
                    sr.[DisplayOrder],ro.[SectionID],ISNULL(sec.[Name],''),ISNULL(sec.[Multiplier],1),
-                   ISNULL(sec.[UseInEodSales],1)
+                   ISNULL(sec.[UseInEodSales],1),ISNULL(sec.[DisplayOrder],0)
             FROM   [dbo].[EodSetupRows] sr
             JOIN   [dbo].[EodRows]     ro  ON ro.[RowID]      = sr.[RowID]
             LEFT JOIN [dbo].[EodSections] sec ON sec.[SectionID] = ro.[SectionID]
             WHERE  sr.[SetupID]=@ID
-            ORDER  BY sr.[DisplayOrder],ro.[Name];
+            ORDER  BY ISNULL(sec.[DisplayOrder],0),sr.[DisplayOrder],ro.[Name];
             """, conn))
         {
             cmd.Parameters.AddWithValue("@ID", setupID);
@@ -88,11 +88,12 @@ public sealed class EodSetupService
             while (await r.ReadAsync(ct))
                 rows.Add(new EodSetupRowDef
                 {
-                    SetupRowID    = r.GetInt32(0),  RowID        = r.GetInt32(1),
-                    RowName       = r.GetString(2), RowDesc      = r.GetString(3),
-                    DisplayOrder  = r.GetInt32(4),  SectionID    = r.GetInt32(5),
-                    SectionName   = r.GetString(6), Multiplier   = r.GetInt32(7),
-                    UseInEodSales = r.GetBoolean(8),
+                    SetupRowID           = r.GetInt32(0),  RowID        = r.GetInt32(1),
+                    RowName              = r.GetString(2), RowDesc      = r.GetString(3),
+                    DisplayOrder         = r.GetInt32(4),  SectionID    = r.GetInt32(5),
+                    SectionName          = r.GetString(6), Multiplier   = r.GetInt32(7),
+                    UseInEodSales        = r.GetBoolean(8),
+                    SectionDisplayOrder  = r.GetInt32(9),
                 });
         }
 
@@ -134,7 +135,7 @@ public sealed class EodSetupService
             SELECT SCOPE_IDENTITY();
             """, conn);
         cmd.Parameters.AddWithValue("@LocID", locationID);
-        cmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
         var id = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
         return await GetSetupHeaderAsync(id, conn, ct);
     }
@@ -158,7 +159,7 @@ public sealed class EodSetupService
             SELECT SCOPE_IDENTITY();
             """, conn);
         createCmd.Parameters.AddWithValue("@LocID", locationID);
-        createCmd.Parameters.AddWithValue("@Desc",  (object?)NullIfEmpty(description) ?? DBNull.Value);
+        createCmd.Parameters.AddWithValue("@Desc",  (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
         var newID = Convert.ToInt32(await createCmd.ExecuteScalarAsync(ct));
 
         // Copy columns
@@ -216,7 +217,7 @@ public sealed class EodSetupService
             await using (var cmd = new SqlCommand(
                 "UPDATE [dbo].[EodSetups] SET [Description]=@Desc WHERE [SetupID]=@ID;", conn, txn))
             {
-                cmd.Parameters.AddWithValue("@Desc", (object?)NullIfEmpty(description) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Desc", (object?)ImportHelper.NullIfEmpty(description) ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@ID",   setupID);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
@@ -369,5 +370,4 @@ public sealed class EodSetupService
         };
     }
 
-    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

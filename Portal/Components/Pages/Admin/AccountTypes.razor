@@ -14,50 +14,16 @@
         To add a new type, import a Chart of Accounts entry that uses it.
     </p>
 
-    <div class="table-card">
-        <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
-            <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @_types.Count record(s)</span>
-        </div>
-        @if (_types.Count == 0)
-        {
-            <p style="padding:16px;color:var(--color-text-muted);">No account types defined yet. Import accounts via Chart of Accounts to populate this list.</p>
-        }
-        else
-        {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                    </tr>
-                    <tr class="filter-row">
-                        <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
-                        <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (Filtered.Count == 0 && _types.Count > 0)
-                    {
-                        <tr><td colspan="2" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
-                    }
-                    @foreach (var t in Filtered)
-                    {
-                        <tr @key="t.TypeID">
-                            <td>@t.Name</td>
-                            <td>@t.Description</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </div>
+    <ReadOnlyLookupList TItem="Portal.Models.AccountType"
+        Items="_types"
+        GetKey="x => x.TypeID"
+        GetName="x => x.Name"
+        GetDescription="x => x.Description"
+        EmptyMessage="No account types defined yet. Import accounts via Chart of Accounts to populate this list." />
 </div>
 
 @code {
     private List<Portal.Models.AccountType> _types = [];
-    private string _fName = string.Empty; private string _fDesc = string.Empty;
-    private static bool Mtch(string? s, string f) => string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
-    private List<Portal.Models.AccountType> Filtered => _types.Where(x => Mtch(x.Name,_fName) && Mtch(x.Description,_fDesc)).ToList();
 
     protected override async Task OnInitializedAsync()
         => _types = await TypeService.GetAllAsync();

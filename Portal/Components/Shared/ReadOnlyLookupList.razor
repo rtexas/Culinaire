@@ -1,0 +1,57 @@
+@typeparam TItem
+
+<div class="table-card">
+    <div style="padding:8px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:12px;">
+        <span style="font-size:13px;color:var(--color-text-muted);">@Filtered.Count of @Items.Count record(s)</span>
+    </div>
+    @if (Items.Count == 0)
+    {
+        <p style="padding:16px;color:var(--color-text-muted);">@EmptyMessage</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                </tr>
+                <tr class="filter-row">
+                    <th><input type="search" @bind="_fName" @bind:event="oninput" placeholder="Filter…" /></th>
+                    <th><input type="search" @bind="_fDesc" @bind:event="oninput" placeholder="Filter…" /></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Filtered.Count == 0)
+                {
+                    <tr><td colspan="2" style="padding:16px;color:var(--color-text-muted);font-style:italic;text-align:center;">No matching records. Clear the filter to see all items.</td></tr>
+                }
+                @foreach (var item in Filtered)
+                {
+                    <tr @key="GetKey(item)">
+                        <td>@GetName(item)</td>
+                        <td>@GetDescription(item)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<TItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public Func<TItem, int> GetKey { get; set; } = _ => 0;
+    [Parameter, EditorRequired] public Func<TItem, string> GetName { get; set; } = _ => string.Empty;
+    [Parameter] public Func<TItem, string> GetDescription { get; set; } = _ => string.Empty;
+    [Parameter] public string EmptyMessage { get; set; } = "No records found.";
+
+    private string _fName = string.Empty;
+    private string _fDesc = string.Empty;
+
+    private static bool Mtch(string? s, string f) =>
+        string.IsNullOrEmpty(f) || (s?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private List<TItem> Filtered => Items
+        .Where(x => Mtch(GetName(x), _fName) && Mtch(GetDescription(x), _fDesc))
+        .ToList();
+}
